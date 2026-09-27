@@ -541,7 +541,8 @@ body.dark .architecture-note { background: #1d2936; }
   .vault-controls { display: grid; grid-template-columns: 1fr 1fr; }
   .vault-controls select { width: 100%; }
   .vault-controls select:last-child { grid-column: 1 / -1; }
-  .field-row, .type-picker { grid-template-columns: 1fr 1fr; }
+  .field-row { grid-template-columns: 1fr; }
+  .type-picker { grid-template-columns: 1fr 1fr; }
   .modal { padding: 23px; }
   .generated-output strong { font-size: 14px; }
   .health-hero { align-items: flex-start; flex-direction: column; }
