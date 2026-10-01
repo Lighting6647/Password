@@ -440,6 +440,18 @@ function saveRequests() {
   localStorage.setItem(REQUEST_STORAGE_KEY, JSON.stringify(requests.slice(0, 500)));
 }
 
+async function mutateServerRequest(requestId, method, changes) {
+  const response = await fetch(`/api/requests/${encodeURIComponent(requestId)}`, {
+    method,
+    headers: changes ? { "Content-Type": "application/json" } : undefined,
+    body: changes ? JSON.stringify(changes) : undefined,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(result.error || "บันทึกคำขอบน Server ไม่สำเร็จ");
+  return result;
+}
+
 function activeItems() {
   return vault?.items.filter((item) => !item.trashedAt) ?? [];
 }
@@ -1452,7 +1464,7 @@ $("#itemForm").addEventListener("submit", async (event) => {
   toast("บันทึกแบบเข้ารหัสแล้ว", item.name);
 });
 
-$("#requestForm").addEventListener("submit", (event) => {
+$("#requestForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const existing = requests.find((request) => request.id === form.elements.id.value);
@@ -1468,12 +1480,17 @@ $("#requestForm").addEventListener("submit", (event) => {
     status: form.elements.status.value,
     urgent: form.elements.urgent.checked,
   };
-  Object.assign(existing, data);
-  saveRequests();
-  closeModal("requestModal");
-  renderRequests();
-  renderDashboard();
-  toast("บันทึกคำขอแล้ว", data.system);
+  try {
+    await mutateServerRequest(existing.id, "PATCH", data);
+    Object.assign(existing, data);
+    saveRequests();
+    closeModal("requestModal");
+    renderRequests();
+    renderDashboard();
+    toast("บันทึกคำขอแล้ว", data.system);
+  } catch (error) {
+    toast("บันทึกคำขอไม่สำเร็จ", error.message);
+  }
 });
 
 $("#deliverForm").addEventListener("submit", async (event) => {
@@ -1719,20 +1736,31 @@ document.addEventListener("click", async (event) => {
   const approveRequest = event.target.closest("[data-request-approve]");
   if (approveRequest) {
     const request = requests.find((entry) => entry.id === approveRequest.dataset.requestApprove);
-    request.status = "approved";
-    saveRequests();
-    renderAll();
-    toast("อนุมัติคำขอแล้ว", "พร้อมเลือกข้อมูลจาก Vault");
+    try {
+      await mutateServerRequest(request.id, "PATCH", { status: "approved" });
+      request.status = "approved";
+      saveRequests();
+      renderAll();
+      toast("อนุมัติคำขอแล้ว", "พร้อมเลือกข้อมูลจาก Vault");
+    } catch (error) {
+      toast("อนุมัติคำขอไม่สำเร็จ", error.message);
+    }
   }
   const rejectRequest = event.target.closest("[data-request-reject]");
   if (rejectRequest) {
     const reason = prompt("เหตุผลที่ปฏิเสธคำขอ:");
     if (reason === null) return;
     const request = requests.find((entry) => entry.id === rejectRequest.dataset.requestReject);
-    request.status = "rejected";
-    request.rejectReason = reason;
-    saveRequests();
-    renderAll();
+    try {
+      await mutateServerRequest(request.id, "PATCH", { status: "rejected", rejectReason: reason });
+      request.status = "rejected";
+      request.rejectReason = reason;
+      saveRequests();
+      renderAll();
+      toast("ปฏิเสธคำขอแล้ว", request.system);
+    } catch (error) {
+      toast("ปฏิเสธคำขอไม่สำเร็จ", error.message);
+    }
   }
   const shareRequest = event.target.closest("[data-request-share]");
   if (shareRequest) await openDeliverForRequest(shareRequest.dataset.requestShare);
@@ -1740,9 +1768,15 @@ document.addEventListener("click", async (event) => {
   if (editRequest) openRequestEditor(editRequest.dataset.requestEdit);
   const deleteRequest = event.target.closest("[data-request-delete]");
   if (deleteRequest && confirm("ลบคำขอนี้ใช่หรือไม่?")) {
-    requests = requests.filter((entry) => entry.id !== deleteRequest.dataset.requestDelete);
-    saveRequests();
-    renderAll();
+    try {
+      await mutateServerRequest(deleteRequest.dataset.requestDelete, "DELETE");
+      requests = requests.filter((entry) => entry.id !== deleteRequest.dataset.requestDelete);
+      saveRequests();
+      renderAll();
+      toast("ลบคำขอแล้ว", "รายการถูกนำออกจาก Server เรียบร้อย");
+    } catch (error) {
+      toast("ลบคำขอไม่สำเร็จ", error.message);
+    }
   }
 
   const historyCopy = event.target.closest("[data-history-copy]");

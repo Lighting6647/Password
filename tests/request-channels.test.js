@@ -596,4 +596,26 @@ test("Lark interactive menu requests and secure delivery work end to end", async
   assert.equal(pushes[0].body.receive_id, "oc_test_chat");
   assert.match(JSON.parse(pushes[0].body.content).text, /share\.html\?p=encrypted-payload/);
   assert.match(JSON.parse(pushes[1].body.content).text, /Abc12345/);
+
+  const rejectResponse = await fetch(`${baseUrl}/api/requests/${encodeURIComponent(larkRequest.id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: adminCookie },
+    body: JSON.stringify({ status: "rejected", rejectReason: "ไม่อนุมัติการใช้งาน" }),
+  });
+  assert.equal(rejectResponse.status, 200);
+  const rejectedList = await fetch(`${baseUrl}/api/requests`, {
+    headers: { cookie: adminCookie },
+  }).then((response) => response.json());
+  assert.equal(rejectedList.requests[0].status, "rejected");
+  assert.equal(rejectedList.requests[0].rejectReason, "ไม่อนุมัติการใช้งาน");
+
+  const deleteResponse = await fetch(`${baseUrl}/api/requests/${encodeURIComponent(larkRequest.id)}`, {
+    method: "DELETE",
+    headers: { cookie: adminCookie },
+  });
+  assert.equal(deleteResponse.status, 200);
+  const deletedList = await fetch(`${baseUrl}/api/requests`, {
+    headers: { cookie: adminCookie },
+  }).then((response) => response.json());
+  assert.equal(deletedList.requests.some((request) => request.id === larkRequest.id), false);
 });

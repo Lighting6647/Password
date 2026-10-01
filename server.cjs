@@ -325,6 +325,33 @@ async function writeRequests(requests) {
   return requestStore.put(requests);
 }
 
+async function handleRequestMutation(req, res, requestId) {
+  const requests = await readRequests();
+  const index = requests.findIndex((item) => item.id === requestId);
+  if (index < 0) return send(res, 404, JSON.stringify({ ok: false, error: 'ไม่พบคำขอนี้บน Server' }));
+
+  if (req.method === 'DELETE') {
+    requests.splice(index, 1);
+    await writeRequests(requests);
+    return send(res, 200, JSON.stringify({ ok: true, deleted: requestId }));
+  }
+
+  const data = JSON.parse(await readBody(req) || '{}');
+  const request = requests[index];
+  const allowedStatuses = new Set(['pending', 'approved', 'rejected', 'delivered']);
+  if (data.status !== undefined) {
+    if (!allowedStatuses.has(data.status)) return send(res, 400, JSON.stringify({ ok: false, error: 'สถานะคำขอไม่ถูกต้อง' }));
+    request.status = data.status;
+  }
+  for (const field of ['name', 'email', 'system', 'reason', 'rejectReason']) {
+    if (data[field] !== undefined) request[field] = String(data[field]).trim().slice(0, field === 'reason' || field === 'rejectReason' ? 1000 : 200);
+  }
+  if (data.urgent !== undefined) request.urgent = Boolean(data.urgent);
+  request.updatedAt = new Date().toISOString();
+  await writeRequests(requests);
+  return send(res, 200, JSON.stringify({ ok: true, request }));
+}
+
 function verifyLineSignature(raw, signature) {
   const secret = getLineConfig().channelSecret;
   if (!secret) return process.env.NODE_ENV !== 'production';
@@ -1286,6 +1313,11 @@ const server = http.createServer(async (req, res) => {
       if (!requireAdminSession(req, res)) return;
       const requests = await enrichLarkRequestProfiles(await readRequests());
       return send(res, 200, JSON.stringify({ requests }));
+    }
+    const requestMutationMatch = req.url.match(/^\/api\/requests\/([^/?]+)$/);
+    if (requestMutationMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
+      if (!requireAdminSession(req, res)) return;
+      return await handleRequestMutation(req, res, decodeURIComponent(requestMutationMatch[1]));
     }
     if (req.method === 'POST' && req.url === '/api/lark/profiles') {
       if (!requireAdminSession(req, res)) return;
