@@ -989,6 +989,7 @@ async function verifyAdminRole(openId, vault) {
 }
 
 function addServerActivity(vault, action, detail, itemId = null) {
+  vault.activity = vault.activity || [];
   vault.activity.unshift({ id: crypto.randomUUID(), action, detail, itemId, at: new Date().toISOString() });
   vault.activity = vault.activity.slice(0, 300);
 }
