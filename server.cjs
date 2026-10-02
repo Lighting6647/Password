@@ -23,7 +23,7 @@ const {
   createVaultStore,
 } = require('./vault-sync-store.cjs');
 const { createRequestStore } = require('./request-store.cjs');
-const { unlockVaultEnvelope } = require('./vault-crypto-node.cjs');
+const { unlockVaultEnvelope, encryptVault } = require('./vault-crypto-node.cjs');
 const { createUserStore } = require('./user-store.cjs');
 
 const root = __dirname;
@@ -935,10 +935,7 @@ async function attemptAutoDeliver(item) {
       
       // Save request as delivered
       item.status = 'delivered';
-      const delivered = await attemptAutoDeliver(item);
-          if (delivered) {
-            return send(res, 200, JSON.stringify({ ok: true, delivered: true }));
-          }
+      
           const current = await readRequests();
       current.unshift(item);
       await writeRequests(current);
@@ -948,6 +945,52 @@ async function attemptAutoDeliver(item) {
     console.error("Auto deliver failed:", error.message);
   }
   return false;
+}
+
+
+function larkApprovalCard(item) {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: `คำขอ Password: ${item.system}` } },
+    elements: [
+      {
+        tag: "div",
+        fields: [
+          { is_short: true, text: { tag: "lark_md", content: `**ผู้ขอ:**\n<at id="${item.larkUserId}"></at>` } },
+          { is_short: true, text: { tag: "lark_md", content: `**ระบบ / บัญชี:**\n${item.system}` } },
+          { is_short: false, text: { tag: "lark_md", content: `**เหตุผล:**\n${item.reason}` } }
+        ]
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "✅ อนุมัติและส่งรหัส" },
+            type: "primary",
+            value: { action: "approve_request", requestId: item.id }
+          },
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "❌ ปฏิเสธ" },
+            type: "danger",
+            value: { action: "reject_request", requestId: item.id }
+          }
+        ]
+      }
+    ]
+  };
+}
+
+async function verifyAdminRole(openId, vault) {
+  const profile = await getLarkUserProfile(openId);
+  const member = vault.members.find(m => m.email === profile.email);
+  return (member && (member.role === 'owner' || member.role === 'admin'));
+}
+
+function addServerActivity(vault, action, detail, itemId = null) {
+  vault.activity.unshift({ id: crypto.randomUUID(), action, detail, itemId, at: new Date().toISOString() });
+  vault.activity = vault.activity.slice(0, 300);
 }
 
 async function handleLarkWebhook(req, res) {
@@ -963,21 +1006,102 @@ async function handleLarkWebhook(req, res) {
   if (eventType === 'card.action.trigger' || eventType === 'card_action') {
     const value = payload.event?.action?.value || payload.action?.value || {};
     const action = String(value.action || '');
+    
+    if (action === 'reject_request') {
+       const reqId = value.requestId;
+       const current = await readRequests();
+       const item = current.find(r => r.id === reqId);
+       if (item) {
+          item.status = 'rejected';
+          await writeRequests(current);
+          await sendLarkMessage(item.larkChatId, 'text', larkTextContent(`❌ คำขอ ${item.system} ของคุณถูกปฏิเสธ`));
+          
+          const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL;
+          const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD;
+          if (botEmail && botPassword) {
+            const envelope = await vaultStore.get();
+            if (envelope) {
+               try {
+                 const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
+                 const adminProfile = await getLarkUserProfile(payload.open_id);
+                 addServerActivity(vault, "ปฏิเสธคำขอ (Lark)", `ปฏิเสธคำขอของ ${item.name} โดย ${adminProfile.name}`, null);
+                 const newEnvelope = await encryptVault(vault, key, envelope);
+                 await vaultStore.save(newEnvelope);
+               } catch(e) {}
+            }
+          }
+          return send(res, 200, JSON.stringify({ toast: { type: 'success', content: 'ปฏิเสธคำขอเรียบร้อยแล้ว' } }));
+       }
+       return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'ไม่พบคำขอนี้ในระบบ' } }));
+    }
+
+    if (action === 'approve_request') {
+       const reqId = value.requestId;
+       const current = await readRequests();
+       const item = current.find(r => r.id === reqId);
+       if (!item) return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'ไม่พบคำขอนี้ในระบบ' } }));
+
+       // Verify Bot setup
+       const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL;
+       const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD;
+       if (!botEmail || !botPassword) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่ได้ตั้งค่า AUTO_DELIVER_BOT ไว้ใน Render' } }));
+
+       const envelope = await vaultStore.get();
+       if (!envelope) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่พบ Vault' } }));
+
+       try {
+         const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
+         
+         if (!(await verifyAdminRole(payload.open_id, vault))) {
+            return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'คุณไม่มีสิทธิ์ (ต้องเป็น Owner/Admin ใน Passly)' } }));
+         }
+
+         let targetItem = vault.items.find(i => 
+           i.name.toLowerCase() === (item.requestAccount || item.system).toLowerCase() || 
+           i.name.toLowerCase().includes((item.requestAccount || item.system).toLowerCase())
+         );
+
+         if (targetItem && targetItem.password) {
+            // Deliver
+            const message = `✅ คำขอ ${item.system} ได้รับการอนุมัติแล้ว\n\n👤 บัญชี: ${targetItem.name}\n📧 Username: ${targetItem.username || '-'}\n🔑 Password: ${targetItem.password}`;
+            await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
+            
+            // Add Activity Log
+            const adminProfile = await getLarkUserProfile(payload.open_id);
+            addServerActivity(vault, "อนุมัติคำขอผ่าน Lark", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${adminProfile.name}`, targetItem.id);
+            
+            // Encrypt and Save
+            const newEnvelope = await encryptVault(vault, key, envelope);
+            await vaultStore.save(newEnvelope);
+
+            item.status = 'delivered';
+            await writeRequests(current);
+
+            return send(res, 200, JSON.stringify({ toast: { type: 'success', content: 'ส่งรหัสผ่านให้เรียบร้อยแล้ว' } }));
+         } else {
+            return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่พบรหัสผ่านในระบบ' } }));
+         }
+       } catch (e) {
+         return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ถอดรหัส Vault ไม่ผ่าน ตรวจสอบรหัสผ่าน Bot' } }));
+       }
+    }
+
     if (action === 'menu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkRequestMenu(value.page))));
     if (action === 'submenu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkAccountMenu(String(value.group || ''), value.page))));
     if (action === 'request') {
       const item = await parseLarkCardRequest(payload, value);
       if (item) {
-        const delivered = await attemptAutoDeliver(item);
-        if (delivered) return send(res, 200, JSON.stringify({ toast: { type: 'success', content: 'ระบบได้ส่งรหัสผ่านให้ทางแชตเรียบร้อยแล้ว' } }));
+        
       }
       if (!item || !isAllowedLarkChat(item.larkChatId)) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่สามารถรับคำขอจากแชตนี้ได้' } }));
       const current = await readRequests();
       if (!current.some((saved) => saved.id === item.id)) {
         current.unshift(item);
         await writeRequests(current);
+        const adminChatId = process.env.LARK_ALLOWED_CHAT_ID;
+        await sendLarkMessage(adminChatId, 'interactive', larkApprovalCard(item));
       }
-      return send(res, 200, JSON.stringify({ toast: { type: 'success', content: `รับคำขอ ${item.system} แล้ว ผู้ดูแลกำลังตรวจสอบ` } }));
+      return send(res, 200, JSON.stringify({ toast: { type: 'success', content: `ระบบส่งคำขอให้ Admin อนุมัติแล้ว` } }));
     }
     return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'ไม่พบรายการที่เลือก' } }));
   }
