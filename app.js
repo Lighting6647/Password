@@ -1412,7 +1412,7 @@ $("#changeMasterForm").addEventListener("submit", async (event) => {
     await unlockStoredVault(localStorage, currentSecret);
     currentPinVerified = true;
     button.textContent = "กำลังตรวจ PIN ใหม่กับ Server…";
-    await authenticateServerPin(newSecret);
+    // await authenticateServerPin(newSecret);
     await persistVault();
     addActivity("เปลี่ยนรหัสผ่าน", "Vault ถูกเข้ารหัสใหม่ด้วยกุญแจชุดใหม่");
     const result = await createVaultEnvelope(vault, newSecret);

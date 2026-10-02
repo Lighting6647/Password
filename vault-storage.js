@@ -198,11 +198,11 @@ function legacyPasswordCandidates(password) {
   return [...new Set(candidates)];
 }
 
-async function unlockCompatibleEnvelope(envelope, password) {
+async function unlockCompatibleEnvelope(envelope, email, password) {
   let lastError;
   for (const candidate of legacyPasswordCandidates(password)) {
     try {
-      return await unlockVaultEnvelope(envelope, candidate);
+      return await unlockVaultEnvelope(envelope, email, candidate);
     } catch (error) {
       lastError = error;
     }
@@ -210,7 +210,8 @@ async function unlockCompatibleEnvelope(envelope, password) {
   throw lastError;
 }
 
-export async function unlockStoredVault(storage, password) {
+export async function unlockStoredVault(storage, email, password) {
+  if (!password) { password = email; email = null; }
   const current = readVaultEnvelope(storage);
   const backup = readVaultEnvelope(storage, VAULT_BACKUP_STORAGE_KEY);
   const recovery = readVaultEnvelope(storage, VAULT_RECOVERY_STORAGE_KEY);
@@ -219,7 +220,7 @@ export async function unlockStoredVault(storage, password) {
 
   if (current) {
     try {
-      const result = await unlockCompatibleEnvelope(current, password);
+      const result = await unlockCompatibleEnvelope(current, email, password);
       let repairError = null;
       try {
         storage.setItem(VAULT_RECOVERY_STORAGE_KEY, JSON.stringify(current));
@@ -243,7 +244,7 @@ export async function unlockStoredVault(storage, password) {
 
   if (backup) {
     try {
-      const result = await unlockCompatibleEnvelope(backup, password);
+      const result = await unlockCompatibleEnvelope(backup, email, password);
       let repairError = null;
       try {
         commitVaultEnvelope(storage, backup, {
