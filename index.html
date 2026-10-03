@@ -233,6 +233,23 @@
             <section class="settings-card"><div class="settings-icon">⌁</div><div><h2>การเข้าสู่ระบบ</h2><p id="serverPinStatus">กำลังตรวจสอบ PIN ผู้ดูแลบน Server…</p><p>Passly จะไม่ล็อกอัตโนมัติ ออกจากระบบได้จากปุ่มด้านซ้าย</p><button class="secondary-btn" id="changeMasterBtn">ซิงก์ PIN ของ Vault กับ Server</button></div></section>
             <section class="settings-card"><div class="settings-icon">⇅</div><div><h2>นำเข้าและสำรองข้อมูล</h2><p>รองรับ Excel โครงสร้างเดิม, CSV, JSON และไฟล์สำรองที่เข้ารหัส</p><div class="settings-actions"><button class="secondary-btn" id="importBtn">นำเข้า Excel / CSV</button><button class="secondary-btn" id="exportVaultBtn">Export Encrypted Backup</button><button class="text-btn" id="importBackupBtn">กู้คืน Backup</button></div></div></section>
             <section class="settings-card"><div class="settings-icon">LARK</div><div><h2>Lark Request & Delivery</h2><p id="lineConfigStatus">กำลังตรวจสอบการตั้งค่าบน Server…</p><p>รับคำขอจากเมนู Interactive Card และส่งลิงก์ Passly พร้อม Share PIN กลับเข้าแชต Lark ต้นทาง</p><code>/api/lark/webhook</code><form id="larkConfigForm" class="line-config-form"><input type="text" id="larkAppId" placeholder="Lark App ID" class="config-input"><input type="password" id="larkAppSecret" placeholder="Lark App Secret" class="config-input"><input type="password" id="larkVerificationToken" placeholder="Lark Verification Token" class="config-input"><input type="text" id="larkWebhookUrl" placeholder="Incoming Webhook URL (Fallback)" class="config-input"><input type="text" id="larkChatId" placeholder="Lark Chat ID (Optional)" class="config-input"><button type="submit" class="secondary-btn">บันทึกการตั้งค่า Lark</button></form></div></section>
+            <section class="settings-card">
+              <div class="settings-icon" style="background: linear-gradient(135deg, #2AABEE, #229ED9); color: #fff; font-weight: bold; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px;">TG</div>
+              <div>
+                <h2>Telegram Request & Delivery</h2>
+                <p id="telegramConfigStatus">กำลังตรวจสอบการตั้งค่าบน Server…</p>
+                <p>รับคำขอรหัสผ่านผ่าน Telegram Bot และส่งรหัสให้ผู้ขออัตโนมัติเมื่อแอดมินกดอนุมัติในแชต</p>
+                <code>/api/telegram/webhook</code>
+                <form id="telegramConfigForm" class="line-config-form">
+                  <input type="password" id="telegramBotToken" placeholder="Telegram Bot Token (จาก @BotFather)" class="config-input">
+                  <input type="text" id="telegramChatId" placeholder="Telegram Chat ID หรือ Group ID (Optional)" class="config-input">
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+                    <button type="submit" class="secondary-btn" style="flex: 1;">บันทึกการตั้งค่า Telegram</button>
+                    <button type="button" id="telegramSetWebhookBtn" class="primary-btn" style="flex: 1;">ตั้งค่า Webhook อัตโนมัติ</button>
+                  </div>
+                </form>
+              </div>
+            </section>
             <section class="settings-card danger-card"><div class="settings-icon">↻</div><div><h2>สร้าง Vault ใหม่</h2><p>ดาวน์โหลดและเก็บ Vault ปัจจุบันเป็น Backup เข้ารหัสก่อนเริ่ม Vault ใหม่</p><button class="secondary-btn" id="resetVaultBtn">เก็บ Vault เดิมและสร้างใหม่</button></div></section>
           </div>
           <div class="architecture-note"><strong>รูปแบบการเก็บข้อมูลในเวอร์ชันนี้</strong><p>Vault ถูกเข้ารหัสและเก็บเฉพาะในเบราว์เซอร์ของผู้ดูแลเครื่องนี้ จึงยังไม่ซิงก์รหัสข้ามอุปกรณ์และไม่ส่งรหัสเข้าใช้งานไปยัง Server</p></div>
@@ -327,6 +344,6 @@
   </div>
 
   <div class="toast" id="toast"><span>✓</span><div><strong id="toastTitle">บันทึกแล้ว</strong><small id="toastMessage"></small></div></div>
-  <script type="module" src="app.js?v=20261003-6"></script>
+  <script type="module" src="app.js?v=20261003-telegram"></script>
 </body>
 </html>

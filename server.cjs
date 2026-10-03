@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -1449,6 +1450,285 @@ async function handleLarkDelivery(req, res) {
   send(res, 200, JSON.stringify({ ok: true, deliveredTo: 'Lark' }));
 }
 
+
+function getTelegramConfig() {
+  const localConfig = readLocalConfig();
+  return {
+    botToken: localConfig.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
+    allowedChatId: localConfig.TELEGRAM_ALLOWED_CHAT_ID || process.env.TELEGRAM_ALLOWED_CHAT_ID || '',
+  };
+}
+
+function callTelegramApi(botToken, method, payload) {
+  return new Promise((resolve, reject) => {
+    if (!botToken) return reject(new Error('ไม่ได้ตั้งค่า Telegram Bot Token'));
+    const data = JSON.stringify(payload || {});
+    const req = https.request(`https://api.telegram.org/bot${botToken}/${method}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data),
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed.ok) resolve(parsed.result);
+          else reject(new Error(parsed.description || 'Telegram API Error'));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+async function sendTelegramMessage(chatId, text, replyMarkup = null) {
+  const config = getTelegramConfig();
+  if (!config.botToken || !chatId) return null;
+  const payload = {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  try {
+    return await callTelegramApi(config.botToken, 'sendMessage', payload);
+  } catch (err) {
+    console.error('Failed to send Telegram message:', err.message);
+    return null;
+  }
+}
+
+async function answerTelegramCallback(callbackQueryId, text = '') {
+  const config = getTelegramConfig();
+  if (!config.botToken || !callbackQueryId) return;
+  try {
+    await callTelegramApi(config.botToken, 'answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      text,
+    });
+  } catch (err) {
+    console.error('Failed to answer Telegram callback query:', err.message);
+  }
+}
+
+async function handleTelegramWebhook(req, res) {
+  try {
+    const raw = await readBody(req, 1_000_000);
+    const update = JSON.parse(raw || '{}');
+    const config = getTelegramConfig();
+
+    if (update.callback_query) {
+      const cq = update.callback_query;
+      const data = cq.data || '';
+      const clickerName = cq.from ? (cq.from.first_name + (cq.from.last_name ? ' ' + cq.from.last_name : '')) : 'Admin';
+
+      if (data.startsWith('tg_reject_')) {
+        const reqId = data.replace('tg_reject_', '');
+        const current = await readRequests();
+        const item = current.find((r) => r.id === reqId);
+        if (item) {
+          item.status = 'rejected';
+          await writeRequests(current);
+          if (item.telegramChatId) {
+            await sendTelegramMessage(item.telegramChatId, `❌ คำขอ <b>${item.system}</b> ของคุณถูกปฏิเสธ`);
+          }
+          await answerTelegramCallback(cq.id, 'ปฏิเสธคำขอเรียบร้อยแล้ว');
+          if (cq.message?.chat?.id && cq.message?.message_id) {
+            try {
+              await callTelegramApi(config.botToken, 'editMessageText', {
+                chat_id: cq.message.chat.id,
+                message_id: cq.message.message_id,
+                text: `❌ คำขอ <b>${item.system}</b> (ผู้ขอ: ${item.name}) ถูกปฏิเสธแล้วโดย ${clickerName}`,
+                parse_mode: 'HTML',
+              });
+            } catch {}
+          }
+        } else {
+          await answerTelegramCallback(cq.id, 'ไม่พบคำขอนี้ในระบบ');
+        }
+        return send(res, 200, JSON.stringify({ ok: true }));
+      }
+
+      if (data.startsWith('tg_approve_')) {
+        const reqId = data.replace('tg_approve_', '');
+        const current = await readRequests();
+        const item = current.find((r) => r.id === reqId);
+        if (!item) {
+          await answerTelegramCallback(cq.id, 'ไม่พบคำขอนี้ในระบบ');
+          return send(res, 200, JSON.stringify({ ok: true }));
+        }
+
+        const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL || 'admin';
+        const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD || '664749';
+
+        const envelope = await vaultStore.get();
+        if (!envelope) {
+          await answerTelegramCallback(cq.id, 'ไม่พบ Vault ในระบบ');
+          return send(res, 200, JSON.stringify({ ok: true }));
+        }
+
+        try {
+          const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
+          const target = item.requestAccount || item.system;
+          const targetItem = vault.items.find((i) =>
+            i.name.toLowerCase() === target.toLowerCase() ||
+            i.name.toLowerCase().includes(target.toLowerCase())
+          );
+
+          if (targetItem && targetItem.password) {
+            const message = `✅ คำขอ <b>${item.system}</b> ได้รับการอนุมัติแล้ว\n\n👤 <b>บัญชี:</b> ${targetItem.name}\n📧 <b>Username:</b> ${targetItem.username || '-'}\n🔑 <b>Password:</b> <code>${targetItem.password}</code>`;
+            if (item.telegramChatId) {
+              await sendTelegramMessage(item.telegramChatId, message);
+            }
+
+            addServerActivity(vault, "อนุมัติคำขอผ่าน Telegram", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${clickerName}`, targetItem.id);
+
+            const newEnvelope = await encryptVault(vault, key, envelope);
+            await vaultStore.save(newEnvelope);
+
+            item.status = 'delivered';
+            await writeRequests(current);
+
+            await answerTelegramCallback(cq.id, 'อนุมัติและส่งรหัสเรียบร้อยแล้ว');
+            if (cq.message?.chat?.id && cq.message?.message_id) {
+              try {
+                await callTelegramApi(config.botToken, 'editMessageText', {
+                  chat_id: cq.message.chat.id,
+                  message_id: cq.message.message_id,
+                  text: `✅ คำขอ <b>${item.system}</b> (ผู้ขอ: ${item.name}) ได้รับการอนุมัติแล้วโดย ${clickerName}`,
+                  parse_mode: 'HTML',
+                });
+              } catch {}
+            }
+          } else {
+            await answerTelegramCallback(cq.id, 'ไม่พบรหัสผ่านสำหรับระบบนี้ใน Vault');
+          }
+        } catch (err) {
+          console.error('Telegram approval error:', err);
+          await answerTelegramCallback(cq.id, 'ถอดรหัส Vault ไม่สำเร็จ ตรวจสอบรหัสผ่าน Bot');
+        }
+        return send(res, 200, JSON.stringify({ ok: true }));
+      }
+    }
+
+    if (update.message && update.message.text) {
+      const msg = update.message;
+      const text = msg.text.trim();
+      const chatId = msg.chat.id;
+      const fromName = msg.from ? (msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '')) : 'ผู้ใช้งาน';
+
+      if (config.allowedChatId && String(config.allowedChatId) !== String(chatId)) {
+        return send(res, 200, JSON.stringify({ ok: true }));
+      }
+
+      if (/^(\/start|\/help|เมนู)$/i.test(text)) {
+        const welcome = `👋 <b>สวัสดีครับ! ยินดีต้อนรับสู่ Passly Bot</b>\n\nระบบบริหารจัดการและขอรหัสผ่านสำหรับ <b>Fern Clinic</b>\n\n📌 <b>วิธีขอรหัสผ่าน:</b>\nพิมพ์ <code>ขอรหัส [ชื่อระบบ]</code> หรือ <code>/req [ชื่อระบบ]</code>\n<i>ตัวอย่าง: ขอรหัส Facebook หรือ /req POS</i>`;
+        await sendTelegramMessage(chatId, welcome);
+        return send(res, 200, JSON.stringify({ ok: true }));
+      }
+
+      const isReq = /^(ขอ\s*(รหัส|password|pass)|\/req|\/request)\s+/i.test(text);
+      if (isReq) {
+        const systemName = text.replace(/^(ขอ\s*(รหัส|password|pass)|\/req|\/request)\s+/i, '').trim();
+        if (systemName) {
+          const item = {
+            id: crypto.randomUUID(),
+            system: systemName,
+            name: fromName,
+            reason: `ขอผ่าน Telegram (${msg.from?.username ? '@' + msg.from.username : chatId})`,
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+            channel: 'telegram',
+            telegramChatId: chatId,
+            telegramUserId: msg.from?.id,
+          };
+
+          const current = await readRequests();
+          current.unshift(item);
+          await writeRequests(current);
+
+          const keyboard = {
+            inline_keyboard: [
+              [
+                { text: '✅ อนุมัติและส่งรหัส', callback_data: `tg_approve_${item.id}` },
+                { text: '❌ ปฏิเสธ', callback_data: `tg_reject_${item.id}` },
+              ]
+            ]
+          };
+
+          const adminChat = config.allowedChatId || chatId;
+          const approvalText = `🔔 <b>มีคำขอ Password ใหม่!</b>\n\n👤 <b>ผู้ขอ:</b> ${fromName}\n🏢 <b>ระบบที่ขอ:</b> <code>${systemName}</code>\n💬 <b>ช่องทาง:</b> Telegram`;
+          await sendTelegramMessage(adminChat, approvalText, keyboard);
+
+          if (chatId !== adminChat) {
+            await sendTelegramMessage(chatId, `✅ ได้รับคำขอ <b>${systemName}</b> แล้ว กรุณารอแอดมินอนุมัติครับ`);
+          }
+          return send(res, 200, JSON.stringify({ ok: true }));
+        }
+      }
+    }
+
+    send(res, 200, JSON.stringify({ ok: true }));
+  } catch (err) {
+    console.error('Telegram webhook error:', err);
+    send(res, 200, JSON.stringify({ ok: false, error: err.message }));
+  }
+}
+
+async function handleTelegramSetWebhook(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  const config = getTelegramConfig();
+  if (!config.botToken) {
+    return send(res, 400, JSON.stringify({ ok: false, error: 'กรุณากรอก Telegram Bot Token ก่อน' }));
+  }
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http');
+  const origin = `${proto}://${host}`;
+  const webhookUrl = `${origin}/api/telegram/webhook`;
+  try {
+    const result = await callTelegramApi(config.botToken, 'setWebhook', {
+      url: webhookUrl,
+      drop_pending_updates: true,
+    });
+    send(res, 200, JSON.stringify({ ok: true, webhookUrl, result }));
+  } catch (err) {
+    send(res, 400, JSON.stringify({ ok: false, error: err.message }));
+  }
+}
+
+async function handleTelegramConfigWrite(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  try {
+    const body = JSON.parse(await readBody(req) || '{}');
+    const localConfig = readLocalConfig();
+    localConfig.TELEGRAM_BOT_TOKEN = String(body.botToken || '').trim();
+    localConfig.TELEGRAM_ALLOWED_CHAT_ID = String(body.chatId || '').trim();
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(configFile, JSON.stringify(localConfig, null, 2));
+    send(res, 200, JSON.stringify({ ok: true }));
+  } catch (err) {
+    send(res, 400, JSON.stringify({ ok: false, error: err.message }));
+  }
+}
+
+async function handleTelegramConfigGet(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  const config = getTelegramConfig();
+  send(res, 200, JSON.stringify({
+    ok: true,
+    botToken: config.botToken ? '••••••••' + config.botToken.slice(-6) : '',
+    configured: Boolean(config.botToken),
+    chatId: config.allowedChatId,
+  }));
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && (req.url === '/api/auth/pin' || req.url === '/api/auth/login')) {
@@ -1486,6 +1766,19 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && req.url === '/api/lark/webhook') {
       return await handleLarkWebhook(req, res);
+    }
+    
+    if (req.method === 'POST' && req.url === '/api/telegram/webhook') {
+      return await handleTelegramWebhook(req, res);
+    }
+    if (req.method === 'GET' && req.url === '/api/config/telegram') {
+      return await handleTelegramConfigGet(req, res);
+    }
+    if (req.method === 'POST' && req.url === '/api/config/telegram') {
+      return await handleTelegramConfigWrite(req, res);
+    }
+    if (req.method === 'POST' && req.url === '/api/telegram/set-webhook') {
+      return await handleTelegramSetWebhook(req, res);
     }
     if (req.method === 'POST' && req.url === '/api/lark') {
       return await handleLark(req, res);
@@ -1548,6 +1841,8 @@ const server = http.createServer(async (req, res) => {
         larkVerificationConfigured: Boolean(getLarkConfig().verificationToken),
         larkChatRestricted: Boolean(getLarkConfig().allowedChatId),
         larkMenuCatalogCount: getLarkConfig().menuCatalog.length,
+        telegramConfigured: Boolean(getTelegramConfig().botToken),
+        telegramChatRestricted: Boolean(getTelegramConfig().allowedChatId),
       }));
     }
 

@@ -79,6 +79,7 @@ let linePollReady = false;
 let lineReconnectBusy = false;
 let lockInProgress = false;
 let requests = loadRequests();
+loadTelegramConfig();
 let remoteVaultRevision = null;
 let remoteSyncAvailable = false;
 let remoteSyncConflict = false;
@@ -1127,6 +1128,11 @@ async function checkServerConfiguration() {
     $("#lineConfigStatus").textContent = result.larkConfigured
       ? `พร้อมใช้งาน${result.larkAppConfigured ? " · Lark App" : " · Incoming Webhook"}${result.larkChatRestricted ? " · จำกัดเฉพาะแชตที่กำหนด" : ""}`
       : "ยังตั้งค่า Lark App หรือ Incoming Webhook บน Server ไม่ครบ";
+    if ($("#telegramConfigStatus")) {
+      $("#telegramConfigStatus").textContent = result.telegramConfigured
+        ? `พร้อมใช้งาน · Telegram Bot${result.telegramChatRestricted ? " · จำกัดเฉพาะแชตที่กำหนด" : ""}`
+        : "ยังไม่ได้ตั้งค่า Telegram Bot Token บน Server";
+    }
   } catch {
     $("#serverPinStatus").textContent = "ตรวจสอบระบบ PIN บน Server ไม่สำเร็จ";
     $("#lineConfigStatus").textContent = "ตรวจสอบ Server ไม่สำเร็จ";
@@ -2083,6 +2089,78 @@ $("#larkConfigForm").addEventListener("submit", async (e) => {
   }
 });
 
+
+
+async function loadTelegramConfig() {
+  try {
+    const res = await fetch('/api/config/telegram');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.chatId && $("#telegramChatId")) $("#telegramChatId").value = data.chatId;
+    if (data.configured && $("#telegramBotToken")) $("#telegramBotToken").placeholder = `Token ปัจจุบัน: ${data.botToken}`;
+  } catch {}
+}
+
+$("#telegramConfigForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const botToken = $("#telegramBotToken").value.trim();
+  const chatId = $("#telegramChatId").value.trim();
+  const btn = e.target.querySelector('button[type="submit"]');
+  const originalText = btn.textContent;
+  btn.textContent = "กำลังบันทึก...";
+  btn.disabled = true;
+
+  try {
+    const response = await fetch('/api/config/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ botToken, chatId })
+    });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "เกิดข้อผิดพลาด");
+
+    toast("บันทึกสำเร็จ", "ตั้งค่า Telegram เรียบร้อยแล้ว");
+    $("#telegramBotToken").value = "";
+    await checkServerConfiguration();
+    await loadTelegramConfig();
+  } catch (err) {
+    toast("ข้อผิดพลาด", err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+$("#telegramSetWebhookBtn")?.addEventListener("click", async () => {
+  const btn = $("#telegramSetWebhookBtn");
+  const originalText = btn.textContent;
+  btn.textContent = "กำลังเชื่อมต่อ...";
+  btn.disabled = true;
+
+  try {
+    const botToken = $("#telegramBotToken").value.trim();
+    const chatId = $("#telegramChatId").value.trim();
+    if (botToken) {
+      await fetch('/api/config/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken, chatId })
+      });
+    }
+
+    const response = await fetch('/api/telegram/set-webhook', { method: 'POST' });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "เชื่อมต่อ Webhook ไม่สำเร็จ");
+    toast("เชื่อมต่อ Webhook สำเร็จ!", `Webhook: ${result.webhookUrl}`);
+    await checkServerConfiguration();
+    await loadTelegramConfig();
+  } catch (err) {
+    toast("ข้อผิดพลาด", err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
 
 async function resetVaultStorage() {
   if (vault && vaultKey) await persistVault();

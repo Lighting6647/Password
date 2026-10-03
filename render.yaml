@@ -28,3 +28,7 @@ services:
         sync: false
       - key: AUTO_DELIVER_BOT_PASSWORD
         sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_CHAT_ID
+        sync: false
