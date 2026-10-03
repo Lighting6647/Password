@@ -177,18 +177,59 @@ async function createVaultEnvelope(vault, masterPassword) {
   return { key, envelope };
 }
 
-async function unlockVaultEnvelope(envelope, masterPassword) {
+async function unlockVaultEnvelope(envelope, email, password) {
+  if (password === undefined) {
+    password = email;
+    email = null;
+  }
+
   const normalizedPassword = envelope.secretCanonicalization === VAULT_SECRET_CANONICALIZATION
-    ? normalizeVaultSecret(masterPassword)
+    ? normalizeVaultSecret(password)
     : envelope.passwordNormalization
-      ? masterPassword.normalize(envelope.passwordNormalization)
-      : masterPassword;
-  const key = await deriveVaultKey(
-    normalizedPassword,
-    base64ToBytes(envelope.salt),
-    envelope.iterations ?? KDF_ITERATIONS,
-    envelope.secretEncoding,
-  );
+      ? password.normalize(envelope.passwordNormalization)
+      : password;
+
+  let key = null;
+
+  if (email && Array.isArray(envelope.keyrings) && envelope.keyrings.length > 0) {
+    const targetEmail = String(email).trim().toLowerCase();
+    const keyring = envelope.keyrings.find((k) => k.email && k.email.trim().toLowerCase() === targetEmail);
+    if (keyring && keyring.encryptedKey && keyring.iv && keyring.salt) {
+      try {
+        const userKey = await deriveVaultKey(
+          normalizedPassword,
+          base64ToBytes(keyring.salt),
+          keyring.iterations ?? KDF_ITERATIONS,
+          keyring.secretEncoding || VAULT_SECRET_ENCODING,
+        );
+        const subtle = webcrypto.subtle;
+        const rawMasterKey = await subtle.decrypt(
+          { name: "AES-GCM", iv: base64ToBytes(keyring.iv) },
+          userKey,
+          base64ToBytes(keyring.encryptedKey),
+        );
+        key = await subtle.importKey(
+          "raw",
+          rawMasterKey,
+          { name: "AES-GCM" },
+          true,
+          ["encrypt", "decrypt"],
+        );
+      } catch (err) {
+        console.warn("Keyring unlock failed, falling back to root:", err.message);
+      }
+    }
+  }
+
+  if (!key) {
+    key = await deriveVaultKey(
+      normalizedPassword,
+      base64ToBytes(envelope.salt),
+      envelope.iterations ?? KDF_ITERATIONS,
+      envelope.secretEncoding,
+    );
+  }
+
   const vault = await decryptVault(envelope, key);
   return { key, vault };
 }
