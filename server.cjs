@@ -232,20 +232,34 @@ async function handleAdminPinAuth(req, res) {
   if (activeAttempt?.count >= authAttemptLimit) return rateLimitResponse(res, activeAttempt);
 
   const data = JSON.parse(await readBody(req, 2_000) || '{}');
-  const pin = typeof data.pin === 'string' ? data.pin : '';
-  const valid = await verifyPinHash(pin, adminPinHash);
+  const pin = typeof data.pin === 'string' ? data.pin : (typeof data.password === 'string' ? data.password : '');
+  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+
+  let valid = await verifyPinHash(pin, adminPinHash);
+  if (!valid && userStore && email) {
+    try {
+      const users = await userStore.get();
+      const user = users.find((u) => u.email === email);
+      if (user && user.authHash) {
+        valid = await verifyPinHash(pin, user.authHash);
+      }
+    } catch (err) {
+      console.error('userStore error:', err);
+    }
+  }
+
   if (!valid) {
     const failed = recordFailedAuth(address);
     if (failed.count >= authAttemptLimit) return rateLimitResponse(res, failed);
     return send(res, 401, JSON.stringify({
       ok: false,
-      error: 'PIN ไม่ถูกต้อง',
+      error: 'อีเมลหรือรหัสผ่าน / PIN ไม่ถูกต้อง',
       attemptsRemaining: authAttemptLimit - failed.count,
     }));
   }
 
   authAttempts.delete(address);
-  const token = createSessionToken(adminPinHash);
+  const token = createSessionToken(adminPinHash, { email: email || 'admin' });
   return send(
     res,
     200,
@@ -253,6 +267,37 @@ async function handleAdminPinAuth(req, res) {
     'application/json; charset=utf-8',
     { 'Set-Cookie': sessionCookie(req, token) },
   );
+}
+
+async function handleGetUsers(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  const users = await userStore.get();
+  const safeUsers = users.map((u) => ({ email: u.email, role: u.role }));
+  return send(res, 200, JSON.stringify({ ok: true, users: safeUsers }));
+}
+
+async function handlePutUsers(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  const data = JSON.parse(await readBody(req, 1_000_000) || '[]');
+  if (!Array.isArray(data)) return send(res, 400, JSON.stringify({ ok: false, error: 'Invalid data' }));
+
+  const currentUsers = await userStore.get();
+  const { createPinHash } = require('./pin-auth.cjs');
+  const updated = [];
+  for (const item of data) {
+    const email = String(item.email || '').trim().toLowerCase();
+    if (!email) continue;
+    let authHash = item.authHash;
+    if (item.password) {
+      authHash = await createPinHash(item.password);
+    } else {
+      const existing = currentUsers.find((u) => u.email === email);
+      if (existing) authHash = existing.authHash;
+    }
+    updated.push({ email, role: item.role || 'member', authHash });
+  }
+  const saved = await userStore.put(updated);
+  return send(res, 200, JSON.stringify({ ok: true, count: saved.length }));
 }
 
 function handleAdminLogout(req, res) {
@@ -1401,8 +1446,14 @@ async function handleLarkDelivery(req, res) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === 'POST' && req.url === '/api/auth/pin') {
+    if (req.method === 'POST' && (req.url === '/api/auth/pin' || req.url === '/api/auth/login')) {
       return await handleAdminPinAuth(req, res);
+    }
+    if (req.method === 'GET' && req.url === '/api/users') {
+      return await handleGetUsers(req, res);
+    }
+    if (req.method === 'POST' && req.url === '/api/users') {
+      return await handlePutUsers(req, res);
     }
     if (req.method === 'GET' && req.url === '/api/auth/status') {
       return send(res, 200, JSON.stringify({

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20261003-3" />
 </head>
 <body>
   <section class="lock-screen" id="lockScreen">
@@ -45,8 +45,8 @@
           <h2>เข้าสู่ระบบ Passly</h2>
           <p class="panel-copy">กรอก PIN ผู้ดูแลที่กำหนดบน Server ระบบจะตรวจค่า Hash และระบบจะไม่ล็อกอัตโนมัติ</p>
           <form id="unlockForm">
-            <label>อีเมล (เช่น admin)<input name="email" type="email" required autocomplete="username" autofocus placeholder="ใส่อีเมลของคุณ" style="margin-bottom: 0.5rem;" /></label>
-            <label>รหัสผ่าน<div class="input-with-actions"><input name="password" type="password" required autocomplete="current-password" autocapitalize="off" spellcheck="false" /><button type="button" id="toggleUnlockPassword">ดูรหัส</button></div></label>
+            <label>อีเมลหรือชื่อผู้ใช้ (เช่น admin)<input name="email" type="text" autocomplete="username" autofocus placeholder="ใส่อีเมลหรือชื่อผู้ใช้" style="margin-bottom: 0.5rem;" /></label>
+            <label>รหัสผ่านหรือ PIN<div class="input-with-actions"><input name="password" type="password" required autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="กรอกรหัสผ่านหรือ PIN" /><button type="button" id="toggleUnlockPassword">ดูรหัส</button></div></label>
             <p class="form-error" id="unlockError" hidden></p>
             <button class="primary-btn full" type="submit">เข้าสู่ระบบ <span>→</span></button>
           </form>
@@ -327,6 +327,6 @@
   </div>
 
   <div class="toast" id="toast"><span>✓</span><div><strong id="toastTitle">บันทึกแล้ว</strong><small id="toastMessage"></small></div></div>
-  <script type="module" src="app.js?v=20261001-1"></script>
+  <script type="module" src="app.js?v=20261003-3"></script>
 </body>
 </html>
