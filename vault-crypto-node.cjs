@@ -362,5 +362,6 @@ module.exports = {
   deriveVaultKey,
   decryptVault,
   encryptVault,
+  createVaultEnvelope,
   base64ToBytes
 };
