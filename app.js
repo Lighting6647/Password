@@ -583,12 +583,25 @@ function afterUnlock() {
   if (pendingRemoteUpload) queueRemoteEnvelopeSync(vaultEnvelope);
 }
 
+
+function closeSidebar() {
+  $(".sidebar")?.classList.remove("open");
+  $("#sidebarBackdrop")?.classList.remove("active");
+  document.body.classList.remove("sidebar-locked");
+}
+
+function openSidebar() {
+  $(".sidebar")?.classList.add("open");
+  $("#sidebarBackdrop")?.classList.add("active");
+  document.body.classList.add("sidebar-locked");
+}
+
 function showView(view) {
   activeView = pageTitles[view] ? view : "dashboard";
   $$(".view").forEach((section) => { section.hidden = section.id !== `view-${activeView}`; });
   $$(".nav-item[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
   $("#currentPageTitle").textContent = pageTitles[activeView];
-  $(".sidebar").classList.remove("open");
+  closeSidebar();
   if (activeView === "security") renderSecurity();
   if (activeView === "generator") renderGeneratorHistory();
   history.replaceState(null, "", `#${activeView}`);
@@ -1914,7 +1927,18 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#newItemBtn").addEventListener("click", () => openItemEditor());
-$("#menuBtn").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+$("#menuBtn").addEventListener("click", () => {
+  if ($(".sidebar")?.classList.contains("open")) closeSidebar();
+  else openSidebar();
+});
+$("#sidebarCloseBtn")?.addEventListener("click", closeSidebar);
+$("#sidebarBackdrop")?.addEventListener("click", closeSidebar);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $(".sidebar")?.classList.contains("open")) closeSidebar();
+});
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 992 && $(".sidebar")?.classList.contains("open")) closeSidebar();
+});
 $("#lockVaultBtn").addEventListener("click", () => lockVault("ผู้ดูแลกดออกจากระบบ"));
 $("#themeBtn").addEventListener("click", () => {
   document.body.classList.toggle("dark");

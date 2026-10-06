@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261004-mobile-native" />
+  <link rel="stylesheet" href="styles.css?v=20261006-menu-responsive" />
 </head>
 <body>
   <section class="lock-screen" id="lockScreen">
@@ -62,8 +62,11 @@
   </section>
 
   <div class="app-shell" id="mainApp" hidden>
-    <aside class="sidebar">
-      <a class="brand" href="#dashboard"><span class="brand-mark"><i></i><i></i><i></i></span><span>passly</span></a>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a class="brand" href="#dashboard"><span class="brand-mark"><i></i><i></i><i></i></span><span>passly</span></a>
+        <button class="sidebar-close" id="sidebarCloseBtn" type="button" aria-label="ปิดเมนู">✕</button>
+      </div>
       <div class="workspace-switch"><span class="avatar">FN</span><div><strong>Fern Clinic</strong><small>Organization Vault</small></div><span>⌄</span></div>
       <nav class="nav" aria-label="เมนูหลัก">
         <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span> ภาพรวม</button>
@@ -88,6 +91,7 @@
         <div class="user-card"><span class="avatar">FN</span><span><strong>Fern Clinic</strong><small>ผู้ดูแลระบบ</small></span></div>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
     <main class="main">
       <header class="topbar">
@@ -346,6 +350,6 @@
   </div>
 
   <div class="toast" id="toast"><span>✓</span><div><strong id="toastTitle">บันทึกแล้ว</strong><small id="toastMessage"></small></div></div>
-  <script type="module" src="app.js?v=20261004-mobile-native"></script>
+  <script type="module" src="app.js?v=20261006-menu-responsive"></script>
 </body>
 </html>
