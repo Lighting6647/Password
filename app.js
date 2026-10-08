@@ -440,12 +440,15 @@ function closeModal(id) {
 let privacyShieldTimer = null;
 
 function hasSensitiveScreenContent() {
+  if (isDemoMode) return false;
   if (vault && vaultKey) return true;
   return $$('input[type="password"]').some((input) => input.value.length > 0);
 }
 
 function activatePrivacyShield(reason = "Passly ปิดทับข้อมูลเมื่อหน้าต่างไม่อยู่ด้านหน้า เพื่อช่วยป้องกันการแคปหน้าจอ") {
-  if (!hasSensitiveScreenContent() || lockInProgress) return;
+  if (isDemoMode || !hasSensitiveScreenContent() || lockInProgress) return;
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (isTouchDevice && document.visibilityState === 'visible') return;
   clearTimeout(privacyShieldTimer);
   $("#privacyShieldReason").textContent = reason;
   $("#privacyShield").hidden = false;
@@ -454,7 +457,7 @@ function activatePrivacyShield(reason = "Passly ปิดทับข้อม�
 }
 
 function deactivatePrivacyShield(force = false) {
-  if (!force && (document.hidden || !document.hasFocus())) return;
+  if (!force && (document.hidden || (!document.hasFocus() && !(('ontouchstart' in window) || navigator.maxTouchPoints > 0)))) return;
   clearTimeout(privacyShieldTimer);
   $("#privacyShield").hidden = true;
   $("#privacyShield").setAttribute("aria-hidden", "true");
@@ -877,7 +880,9 @@ async function enterDemoMode() {
       userCard.innerHTML = '<span class="avatar" style="background:#2563eb;color:#fff;">DM</span><span><strong>Fern Clinic (Demo)</strong><small style="color:#60a5fa;">โหมดทดลองใช้งาน</small></span>';
     }
 
+    deactivatePrivacyShield(true);
     afterUnlock();
+    deactivatePrivacyShield(true);
     if ($("#demoModeBanner")) $("#demoModeBanner").hidden = false;
     toast("เข้าสู่โหมดทดลองใช้งาน (Demo)", "สามารถดูรหัส Wi-Fi ทุกจุด และทดลองทุกฟังก์ชันได้ทันที");
   } catch (err) {
@@ -2573,6 +2578,7 @@ $("#enableNotifications").addEventListener("click", async () => {
 $("#lineReconnectBtn").addEventListener("click", reconnectLineRequests);
 $("#enterDemoBtn")?.addEventListener("click", enterDemoMode);
 $("#exitDemoBtn")?.addEventListener("click", exitDemoMode);
+$("#privacyShield")?.addEventListener("click", () => deactivatePrivacyShield(true));
 
 function persistBeforeSuspension() {
   if (!vault || !vaultKey || lockInProgress) return;
