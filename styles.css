@@ -28,6 +28,9 @@ body {
   color: var(--ink);
   font-family: "IBM Plex Sans Thai", sans-serif;
   min-height: 100dvh;
+  overflow: auto;
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch;
 }
 button, a, [role="button"] {
   touch-action: manipulation;
@@ -52,7 +55,9 @@ input, textarea, select { font-size: 16px !important; }
 .lock-screen {
   min-height: 100dvh;
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   place-items: center;
   padding: calc(env(safe-area-inset-top, 0px) + 20px) calc(env(safe-area-inset-right, 0px) + 20px) calc(env(safe-area-inset-bottom, 0px) + 20px) calc(env(safe-area-inset-left, 0px) + 20px);
@@ -148,7 +153,7 @@ input:focus, textarea:focus, select:focus { border-color: #9bae59; box-shadow: 0
   pointer-events: auto;
 }
 body.sidebar-locked {
-  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .workspace-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 11px; border: 1px solid #334038; border-radius: 10px; background: #202c24; }
 .avatar { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: #e9f5bf; color: #354312; font: 700 10px Manrope; }
