@@ -87,6 +87,275 @@ let pendingRemoteUpload = false;
 let remoteSyncQueue = Promise.resolve();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+let isDemoMode = false;
+
+const DEMO_REQUESTS = [
+  {
+    id: "demo-req-1",
+    name: "สมชาย (Marketing)",
+    email: "somchai.mkt@fernclinic.com",
+    system: "Wi-Fi ชั้น 2 - DrFern-F2-1",
+    reason: "ขอต่อเน็ตสำหรับทีมถ่ายคลิปรีวิวและคอนเทนต์ Studio",
+    status: "pending",
+    urgent: true,
+    source: "Telegram",
+    createdAt: new Date(Date.now() - 35 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 35 * 60000).toISOString(),
+  },
+  {
+    id: "demo-req-2",
+    name: "พว. สุภาพร (หัวหน้าพยาบาล)",
+    email: "supaporn.nurse@fernclinic.com",
+    system: "Google Workspace (Fern Clinic)",
+    reason: "เปิดดูเอกสารประวัติคนไข้และนัดหมายแพทย์",
+    status: "approved",
+    urgent: false,
+    source: "Lark",
+    createdAt: new Date(Date.now() - 120 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 10 * 60000).toISOString(),
+  },
+  {
+    id: "demo-req-3",
+    name: "นพ. วรภัทร",
+    email: "vorapat.dr@fernclinic.com",
+    system: "Wi-Fi ชั้น 4 - DrFern-Management",
+    reason: "เชื่อมต่อโน้ตบุ๊กห้องตรวจและห้องประชุมผู้บริหาร",
+    status: "delivered",
+    urgent: false,
+    source: "Manual",
+    createdAt: new Date(Date.now() - 240 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 30 * 60000).toISOString(),
+  }
+];
+
+const FALLBACK_DEMO_VAULT = {
+  items: [
+    {
+      id: "demo-wifi-1",
+      type: "login",
+      name: "Wi-Fi ชั้น 4 - DrFern-MKT",
+      username: "DrFern-MKT",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 4",
+      purpose: "Wi-Fi สำหรับบริเวณทีม Marketing (บ้าน 16)",
+      notes: "บริเวณทีม Marketing (บ้าน 16)",
+      folderId: "folder-floor-4",
+      collectionId: "col-wifi",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-2",
+      type: "login",
+      name: "Wi-Fi ชั้น 4 - DrFern-Management",
+      username: "DrFern-Management",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 4",
+      purpose: "ห้องบอสและคุณหมอ เลขา บัญชี จัดซื้อ (บ้าน 17 และ 18)",
+      notes: "บริเวณ ห้องบอสและคุณหมอ เลขา บัญชี จัดซื้อ (บ้าน 17 และ 18)",
+      folderId: "folder-floor-4",
+      collectionId: "col-wifi",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-3",
+      type: "login",
+      name: "Wi-Fi ชั้น 4 - Studio2-F4_2.4Ghz",
+      username: "Studio2-F4_2.4Ghz",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 4",
+      purpose: "ห้อง Studio2 (ห้องพักทีมแพทย์ บ้าน 17)",
+      notes: "บริเวณห้อง Studio2 (ห้องพักทีมแพทย์ บ้าน 17)",
+      folderId: "folder-floor-4",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-4",
+      type: "login",
+      name: "Wi-Fi ชั้น 4 - Studio2-F4_5Ghz",
+      username: "Studio2-F4_5Ghz",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 4",
+      purpose: "ห้อง Studio2 (ห้องพักทีมแพทย์ บ้าน 17)",
+      notes: "บริเวณห้อง Studio2 (ห้องพักทีมแพทย์ บ้าน 17)",
+      folderId: "folder-floor-4",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-5",
+      type: "login",
+      name: "Wi-Fi ชั้น 3 - DrFern-F3-1",
+      username: "DrFern-F3-1",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 3",
+      purpose: "บริเวณบ้าน 16",
+      notes: "บริเวณบ้าน 16",
+      folderId: "folder-floor-3",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-6",
+      type: "login",
+      name: "Wi-Fi ชั้น 3 - DrFern-F3-2",
+      username: "DrFern-F3-2",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 3",
+      purpose: "บริเวณ บ้าน 17 และ 18",
+      notes: "บริเวณ บ้าน 17 และ 18",
+      folderId: "folder-floor-3",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-7",
+      type: "login",
+      name: "Wi-Fi ชั้น 2 - DrFern-F2-1",
+      username: "DrFern-F2-1",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 2",
+      purpose: "บริเวณบ้าน 16 (Studio)",
+      notes: "บริเวณบ้าน 16",
+      folderId: "folder-floor-2",
+      collectionId: "col-wifi",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-8",
+      type: "login",
+      name: "Wi-Fi ชั้น 2 - DrFern-F2-2",
+      username: "DrFern-F2-2",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 2",
+      purpose: "บริเวณ บ้าน 17 และ 18",
+      notes: "บริเวณ บ้าน 17 และ 18",
+      folderId: "folder-floor-2",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-9",
+      type: "login",
+      name: "Wi-Fi ชั้น 1 - DrFern-F1-1",
+      username: "DrFern-F1-1",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 1",
+      purpose: "บริเวณบ้าน 16 เคาน์เตอร์ต้อนรับ",
+      notes: "บริเวณบ้าน 16",
+      folderId: "folder-floor-1",
+      collectionId: "col-wifi",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-wifi-10",
+      type: "login",
+      name: "Wi-Fi ชั้น 1 - DrFern-F1-2",
+      username: "DrFern-F1-2",
+      password: "0979256266",
+      uri: "Wi-Fi: ชั้น 1",
+      purpose: "บริเวณ บ้าน 17 และ 18",
+      notes: "บริเวณ บ้าน 17 และ 18",
+      folderId: "folder-floor-1",
+      collectionId: "col-wifi",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-login-11",
+      type: "login",
+      name: "Google Workspace (Fern Clinic)",
+      username: "admin@fernclinic.com",
+      password: "FernGSuite#2026",
+      uri: "https://workspace.google.com",
+      purpose: "ระบบอีเมลและไดรฟ์กลางของคลินิก",
+      notes: "บัญชีผู้ดูแล Google Workspace",
+      folderId: "folder-clinic-internal",
+      collectionId: "col-systems",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-login-12",
+      type: "login",
+      name: "Clinic POS & Billing System",
+      username: "pos.cashier@fernclinic.com",
+      password: "CashierFern*2026",
+      uri: "https://pos.fernclinic.local",
+      purpose: "ระบบชำระเงินและออกใบเสร็จคนไข้",
+      notes: "เคาน์เตอร์ชั้น 1",
+      folderId: "folder-clinic-internal",
+      collectionId: "col-systems",
+      favorite: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    {
+      id: "demo-note-13",
+      type: "note",
+      name: "นโยบายความปลอดภัย Wi-Fi Fern Clinic",
+      secureNote: "1. ห้ามแชร์รหัส Wi-Fi โดยตรง ให้ใช้ Passly Share Link ที่มีอายุไม่เกิน 24 ชั่วโมง\\n2. ทุกสิ้นเดือนให้ตรวจเช็คอุปกรณ์ที่เชื่อมต่อผ่านเราเตอร์\\n3. ชั้น 4 ห้องผู้บริหารห้ามเปิดเผยรหัสแก่บุคคลภายนอก",
+      folderId: "folder-clinic-internal",
+      collectionId: "col-wifi",
+      favorite: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    }
+  ],
+  folders: [
+    { id: "folder-floor-1", name: "ชั้น 1" },
+    { id: "folder-floor-2", name: "ชั้น 2" },
+    { id: "folder-floor-3", name: "ชั้น 3" },
+    { id: "folder-floor-4", name: "ชั้น 4" },
+    { id: "folder-clinic-internal", name: "ระบบภายในคลินิก" }
+  ],
+  collections: [
+    { id: "col-wifi", name: "Wi-Fi & Network", description: "จุดกระจายสัญญาณ Wi-Fi ทุกชั้น", color: "#3b82f6", members: "ทุกคน", permission: "view" },
+    { id: "col-systems", name: "IT & Systems", description: "ระบบคลาวด์และงานบริหาร", color: "#10b981", members: "ผู้ดูแลระบบ", permission: "edit" }
+  ],
+  members: [
+    { id: "mem-1", name: "Fern Clinic Admin", email: "admin@fernclinic.com", role: "owner", status: "confirmed", collectionIds: ["col-wifi", "col-systems"] },
+    { id: "mem-2", name: "สมชาย (Marketing)", email: "somchai.mkt@fernclinic.com", role: "admin", status: "confirmed", collectionIds: ["col-wifi"] },
+    { id: "mem-3", name: "พว. สุภาพร", email: "supaporn.nurse@fernclinic.com", role: "member", status: "confirmed", collectionIds: ["col-wifi"] }
+  ],
+  groups: [
+    { id: "grp-1", name: "ทีมแพทย์และพยาบาล", members: "3 คน", collectionId: "col-wifi", permission: "view" },
+    { id: "grp-2", name: "ทีมการตลาด & คอนเทนต์", members: "4 คน", collectionId: "col-wifi", permission: "view" }
+  ],
+  generatorHistory: [
+    { id: "gh-1", value: "FernClinic#2026@Pass", score: 4, at: nowIso() },
+    { id: "gh-2", value: "SecureW!f!-Fl00r2-99", score: 4, at: nowIso() }
+  ],
+  activity: [
+    { id: "act-1", action: "เข้าสู่ระบบ", detail: "โหมดทดลองใช้งาน (Demo Mode)", at: nowIso() },
+    { id: "act-2", action: "เพิ่มรหัส Wi-Fi", detail: "Wi-Fi ชั้น 1-4 ครบ 10 จุด", at: nowIso() },
+    { id: "act-3", action: "อัปเดตระบบ", detail: "รองรับ Telegram & Lark Bot", at: nowIso() }
+  ],
+  settings: {
+    sharePrefix: "[Passly] ข้อมูลเข้าใช้งาน Fern Clinic"
+  }
+};
+
 function animateViewEntrance(view = activeView) {
   if (reducedMotion.matches) return;
   const section = $(`#view-${view}`);
@@ -400,6 +669,7 @@ function migrateVaultData(data) {
 }
 
 async function persistVault() {
+  if (isDemoMode) return Promise.resolve();
   if (!vault || !vaultKey || !vaultEnvelope) return saveQueue;
   const envelopeForSave = structuredClone(vaultEnvelope);
   if (!envelopeForSave) throw new Error("ไม่พบโครงสร้าง Vault");
@@ -552,6 +822,14 @@ async function lockVault(reason = "ออกจากระบบแล้ว", 
   } catch (error) {
     console.error("Unable to finish the final vault save before locking.", error);
   } finally {
+    if (isDemoMode) {
+      isDemoMode = false;
+      if ($("#demoModeBanner")) $("#demoModeBanner").hidden = true;
+      const userCard = $(".user-card");
+      if (userCard) {
+        userCard.innerHTML = '<span class="avatar">FN</span><span><strong>Fern Clinic</strong><small>ผู้ดูแลระบบ</small></span>';
+      }
+    }
     await logoutServerSession();
     vault = null;
     vaultKey = null;
@@ -565,6 +843,52 @@ async function lockVault(reason = "ออกจากระบบแล้ว", 
     lockInProgress = false;
     if (reason) toast("ออกจากระบบ Passly", reason);
   }
+}
+
+async function enterDemoMode() {
+  if (lockInProgress) return;
+  lockInProgress = true;
+  isDemoMode = true;
+
+  try {
+    let demoVaultData = null;
+    try {
+      const res = await fetch("/api/demo/vault", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.vault) demoVaultData = json.vault;
+      }
+    } catch {}
+
+    if (!demoVaultData) {
+      demoVaultData = structuredClone(FALLBACK_DEMO_VAULT);
+    }
+
+    vault = migrateVaultData(demoVaultData);
+    vaultKey = "demo-mode-key";
+    vaultEnvelope = { version: 3, demo: true };
+
+    if (!requests || requests.length === 0) {
+      requests = structuredClone(DEMO_REQUESTS);
+    }
+
+    const userCard = $(".user-card");
+    if (userCard) {
+      userCard.innerHTML = '<span class="avatar" style="background:#2563eb;color:#fff;">DM</span><span><strong>Fern Clinic (Demo)</strong><small style="color:#60a5fa;">โหมดทดลองใช้งาน</small></span>';
+    }
+
+    afterUnlock();
+    if ($("#demoModeBanner")) $("#demoModeBanner").hidden = false;
+    toast("เข้าสู่โหมดทดลองใช้งาน (Demo)", "สามารถดูรหัส Wi-Fi ทุกจุด และทดลองทุกฟังก์ชันได้ทันที");
+  } catch (err) {
+    toast("ไม่สามารถเข้าโหมด Demo ได้", err.message);
+  } finally {
+    lockInProgress = false;
+  }
+}
+
+function exitDemoMode() {
+  lockVault("ออกจากโหมด Demo เรียบร้อยแล้ว", { save: false });
 }
 
 function afterUnlock() {
@@ -2247,6 +2571,8 @@ $("#enableNotifications").addEventListener("click", async () => {
   toast(permission === "granted" ? "เปิดแจ้งเตือนแล้ว" : "ยังไม่ได้รับอนุญาต", permission === "granted" ? "คำขอใหม่จะแจ้งบนหน้าจอ" : "เปิดได้ภายหลังจากการตั้งค่าเบราว์เซอร์");
 });
 $("#lineReconnectBtn").addEventListener("click", reconnectLineRequests);
+$("#enterDemoBtn")?.addEventListener("click", enterDemoMode);
+$("#exitDemoBtn")?.addEventListener("click", exitDemoMode);
 
 function persistBeforeSuspension() {
   if (!vault || !vaultKey || lockInProgress) return;

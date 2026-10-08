@@ -56,6 +56,17 @@
           <button class="text-btn" id="restoreArchivedFromLock" type="button">กู้คืน Vault เดิมที่เก็บไว้ในเบราว์เซอร์</button>
           <button class="text-btn" id="restoreFromLock" type="button">กู้คืนไฟล์ Backup</button>
         </div>
+        <div class="demo-access-card" id="demoAccessSection">
+          <div class="demo-divider"><span>หรือทดลองใช้งาน</span></div>
+          <button class="demo-mode-btn" id="enterDemoBtn" type="button">
+            <span class="demo-icon">👀</span>
+            <span class="demo-btn-body">
+              <strong>เข้าชมโหมดตัวอย่าง (Demo Mode)</strong>
+              <small>ทดลองเล่นทุกฟังก์ชันและค้นหารหัส Wi-Fi โดยไม่ต้องใช้รหัสผ่าน</small>
+            </span>
+            <span class="demo-arrow">→</span>
+          </button>
+        </div>
         <div class="encryption-foot"><span class="pulse-dot"></span> SHA-512 64-byte + AES-256 · กุญแจอยู่ในหน่วยความจำเท่านั้น</div>
       </div>
     </div>
@@ -105,6 +116,17 @@
       </header>
 
       <div class="content">
+        <aside class="demo-mode-banner" id="demoModeBanner" hidden>
+          <div class="demo-banner-content">
+            <span class="demo-badge">DEMO MODE</span>
+            <div>
+              <strong>คุณกำลังใช้งานในโหมดทดลอง (Demo Mode)</strong>
+              <p>สามารถดูข้อมูล Wi-Fi ทุกชั้น ทดลองสร้างรหัส ตรวจสอบความปลอดภัย และทดสอบอนุมัติคำขอได้อิสระ</p>
+            </div>
+          </div>
+          <button class="demo-exit-btn" id="exitDemoBtn" type="button">ออกจากโหมด Demo</button>
+        </aside>
+
         <aside class="line-alert" id="lineAlert">
           <span class="line-logo">LARK</span>
           <div><strong>ระบบคำขอจากกลุ่ม “บัญชี 1”</strong><small id="lineStatus">กำลังตรวจสอบการเชื่อมต่อ…</small></div>
