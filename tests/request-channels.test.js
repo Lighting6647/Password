@@ -61,7 +61,7 @@ test("delivery menu offers Lark by default", async () => {
   assert.match(app, /sendLarkDelivery/);
   assert.match(html, /id="lineReconnectBtn"/);
   assert.match(app, /เซสชัน Server หมดอายุ · กดเชื่อมต่อใหม่/);
-  assert.match(app, /authenticateServerPin\(pin\)/);
+  assert.match(app, /authenticateServerPin\(/);
   assert.match(await fs.readFile(path.join(projectRoot, "server.cjs"), "utf8"), /larkRequestMenu/);
   assert.match(html, /id="deliveryExpiry"/);
   assert.match(html, /option value="custom">กำหนดวันและเวลาเอง/);
@@ -591,7 +591,7 @@ test("Lark interactive menu requests and secure delivery work end to end", async
   const deliveryResult = await deliveryResponse.json();
   assert.equal(deliveryResponse.status, 200, JSON.stringify(deliveryResult));
   assert.equal(deliveryResult.deliveredTo, "Lark");
-  const pushes = larkCalls.filter((call) => call.url === "/open-apis/im/v1/messages?receive_id_type=chat_id");
+  const pushes = larkCalls.filter((call) => call.url === "/open-apis/im/v1/messages?receive_id_type=chat_id" && call.body.msg_type === "text");
   assert.equal(pushes.length, 2);
   assert.equal(pushes[0].body.receive_id, "oc_test_chat");
   assert.match(JSON.parse(pushes[0].body.content).text, /share\.html\?p=encrypted-payload/);

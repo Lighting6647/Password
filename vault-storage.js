@@ -271,7 +271,7 @@ export async function unlockStoredVault(storage, email, password) {
 
   if (recovery) {
     try {
-      const result = await unlockCompatibleEnvelope(recovery, password);
+      const result = await unlockCompatibleEnvelope(recovery, email, password);
       const failedArchive = current || backup ? createVaultArchive(storage) : null;
       const currentRaw = storage.getItem(VAULT_STORAGE_KEY);
       const backupRaw = storage.getItem(VAULT_BACKUP_STORAGE_KEY);
@@ -319,7 +319,7 @@ export async function unlockStoredVault(storage, email, password) {
     for (const candidate of [archive.current, archive.backup].filter(Boolean)) {
       if (attempted.has(JSON.stringify(candidate))) continue;
       try {
-        const result = await unlockCompatibleEnvelope(candidate, password);
+        const result = await unlockCompatibleEnvelope(candidate, email, password);
         const failedArchive = current || backup ? createVaultArchive(storage) : null;
         const currentRaw = storage.getItem(VAULT_STORAGE_KEY);
         const backupRaw = storage.getItem(VAULT_BACKUP_STORAGE_KEY);
