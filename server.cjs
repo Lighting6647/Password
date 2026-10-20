@@ -808,7 +808,9 @@ function larkRequestMenu(page = 1) {
   const groups = larkMenuGroups();
   const choices = groups.length
     ? groups.map((group) => ({
-      label: group.system,
+      label: group.items.length === 1
+        ? `${group.system} · ${group.items[0].account}`
+        : group.system,
       value: group.items.length > 1
         ? { action: 'submenu', group: group.key, page: 1 }
         : { action: 'request', item: group.items[0].id },

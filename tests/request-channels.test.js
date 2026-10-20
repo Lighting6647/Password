@@ -512,6 +512,14 @@ test("Lark interactive menu requests and secure delivery work end to end", async
     .flatMap((element) => element.actions || [])
     .find((button) => button.value?.action === "submenu");
   assert.ok(submenuButton);
+  const directAccountButton = menuCard.elements
+    .flatMap((element) => element.actions || [])
+    .find((button) => button.value?.item === "vault-github");
+  assert.equal(
+    directAccountButton?.text?.content,
+    "GitHub · IT",
+    "a single-account row should show both the system and account so similar Vault entries remain distinguishable",
+  );
 
   const submenuResponse = await fetch(`${baseUrl}/api/lark/webhook`, {
     method: "POST",
