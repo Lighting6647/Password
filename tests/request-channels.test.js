@@ -411,6 +411,14 @@ test("Lark interactive menu requests and secure delivery work end to end", async
       res.end(JSON.stringify({ code: 0, data: { user: { name: "อำพล แซ่แฮ (โอม)", email: "om@example.com" } } }));
       return;
     }
+    if (req.url.includes('/read_users?')) {
+      res.end(JSON.stringify({ code: 0, data: { items: [], has_more: false } }));
+      return;
+    }
+    if (req.method === 'POST' && req.url.startsWith('/open-apis/im/v1/messages')) {
+      res.end(JSON.stringify({ code: 0, data: { message_id: `om_sent_${larkCalls.length}` } }));
+      return;
+    }
     res.end(JSON.stringify({ code: 0, data: {} }));
   });
   larkApi.listen(0, "127.0.0.1");
@@ -644,6 +652,9 @@ test("Lark interactive menu requests and secure delivery work end to end", async
   const approvedPasswordMessages = larkCalls.filter((call) => JSON.stringify(call.body).includes("doctor-password"));
   assert.equal(approvedPasswordMessages.length, 1);
   assert.doesNotMatch(JSON.stringify(approvedPasswordMessages[0].body), /vault-facebook-marketing-password/);
+  const tracked = await fetch(`${baseUrl}/api/requests`, { headers: { cookie: adminCookie } }).then((r) => r.json());
+  assert.equal(tracked.requests[0].sensitiveMessages.length, 1);
+  assert.match(tracked.requests[0].sensitiveMessages[0].messageId, /^om_sent_/);
 
   const storedRequestsPath = path.join(dataDir, "requests.json");
   const storedRequests = JSON.parse(await fs.readFile(storedRequestsPath, "utf8"));

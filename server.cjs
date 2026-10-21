@@ -25,6 +25,7 @@ const {
 } = require('./vault-sync-store.cjs');
 const { createRequestStore } = require('./request-store.cjs');
 const { scheduleAutoApproval, createAutoApprovalProcessor } = require('./lark-auto-approval.cjs');
+const { createReadRecallProcessor } = require('./lark-message-recall.cjs');
 const { unlockVaultEnvelope, encryptVault } = require('./vault-crypto-node.cjs');
 const { createUserStore } = require('./user-store.cjs');
 
@@ -1000,6 +1001,53 @@ async function sendLarkMessage(chatId, msgType, content, replyToMessageId = '') 
 }
 
 function larkTextContent(text) { return { text: String(text || '') }; }
+
+function sensitiveMessageRecord(result) {
+  const messageId = result?.data?.message_id;
+  if (!messageId) {
+    console.error('Lark message recall tracking unavailable: send returned no message ID');
+    return [];
+  }
+  return [{ messageId, sentAt: new Date().toISOString() }];
+}
+
+async function requesterHasReadMessage(messageId, requesterId) {
+  const token = await getLarkTenantToken();
+  let pageToken = '';
+  do {
+    const query = new URLSearchParams({ user_id_type: 'open_id', page_size: '100' });
+    if (pageToken) query.set('page_token', pageToken);
+    const response = await fetch(`${larkApiBaseUrl}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/read_users?${query}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000),
+    });
+    const result = await response.json();
+    if (!response.ok || result.code) throw new Error('Lark read receipt lookup failed');
+    if ((result.data?.items || []).some((user) => user.user_id === requesterId)) return true;
+    pageToken = result.data?.has_more ? result.data.page_token : '';
+  } while (pageToken);
+  return false;
+}
+
+async function recallLarkMessage(messageId) {
+  const token = await getLarkTenantToken();
+  const response = await fetch(`${larkApiBaseUrl}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000),
+  });
+  const result = await response.json();
+  if (!response.ok || result.code) throw new Error('Lark recall failed');
+}
+
+let lastRecallWarning = 0;
+const recallReadMessages = createReadRecallProcessor({
+  read: readRequests, write: writeRequests,
+  hasRead: requesterHasReadMessage, recall: recallLarkMessage, locks: larkDecisionLocks,
+  onError: () => {
+    if (Date.now() - lastRecallWarning > 60000) {
+      console.warn('Lark message recall failed; check im:message:readonly and im:message:recall permissions');
+      lastRecallWarning = Date.now();
+    }
+  },
+});
 function larkCardCallbackResponse(card) {
   return { card: { type: 'raw', data: card } };
 }
@@ -1044,7 +1092,8 @@ async function attemptAutoDeliver(item) {
   const target = findRequestedVaultItem(vault, item);
   if (!target?.password) throw new Error('credential_missing');
   const message = `✅ Passly Agent อนุมัติอัตโนมัติตามกฎรอ 30 วินาที\nผู้ขอ: ${item.name}\nบัญชี: ${target.name}\nUsername: ${target.username || '-'}\nPassword: ${target.password}`;
-  await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
+  const result = await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
+  return { sensitiveMessages: sensitiveMessageRecord(result) };
 }
 
 const processAutoApprovals = createAutoApprovalProcessor({
@@ -1212,19 +1261,20 @@ async function handleLarkWebhook(req, res) {
          if (targetItem && targetItem.password) {
             // Deliver
             const message = `✅ คำขอ ${item.system} ได้รับการอนุมัติแล้ว\n\n👤 บัญชี: ${targetItem.name}\n📧 Username: ${targetItem.username || '-'}\n🔑 Password: ${targetItem.password}`;
-            await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
+            const sentMessage = await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
+            item.sensitiveMessages = sensitiveMessageRecord(sentMessage);
+            item.status = 'delivered';
+            item.approvedBy = { name: approver.profile.name, openId: approver.openId };
+            item.approvedAt = new Date().toISOString();
+            await writeRequests(current);
             
             // Add Activity Log
             addServerActivity(vault, "อนุมัติคำขอผ่าน Lark", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${approver.profile.name} (${approver.openId})`, targetItem.id);
             
             // Encrypt and Save
             const newEnvelope = await encryptVault(vault, key, envelope);
-            await vaultStore.put({ ...envelope, ...newEnvelope }, vaultState.revision);
-
-            item.status = 'delivered';
-            item.approvedBy = { name: approver.profile.name, openId: approver.openId };
-            item.approvedAt = new Date().toISOString();
-            await writeRequests(current);
+            await vaultStore.put({ ...envelope, ...newEnvelope }, vaultState.revision)
+              .catch(() => console.warn('Lark delivery succeeded; Vault audit write needs retry'));
 
             return send(res, 200, JSON.stringify({ toast: { type: 'success', content: 'ส่งรหัสผ่านให้เรียบร้อยแล้ว' } }));
          } else {
@@ -1540,8 +1590,11 @@ async function handleLarkDelivery(req, res) {
   const linkMessage = ['[Passly] ข้อมูลเข้าใช้งานพร้อมแล้ว', `ผู้รับ: ${request.name}`, `ระบบ: ${itemName}`, `หมดอายุ: ${expiryText}`, `เปิดข้อมูล: ${shareUrl}`].join('\n');
   const pinMessage = [`[Passly] Share PIN: ${pin}`, `สำหรับคำขอ ${itemName}`, 'ใช้ PIN นี้เปิดลิงก์ Passly ในข้อความก่อนหน้า'].join('\n');
   if (linkMessage.length > 5_000 || pinMessage.length > 5_000) throw new Error('ข้อความ Lark ยาวเกินขีดจำกัด');
-  await sendLarkMessage(chatId, 'text', larkTextContent(linkMessage));
-  await sendLarkMessage(chatId, 'text', larkTextContent(pinMessage));
+  const sentLink = await sendLarkMessage(chatId, 'text', larkTextContent(linkMessage));
+  request.sensitiveMessages = [...(request.sensitiveMessages || []), ...sensitiveMessageRecord(sentLink)];
+  await writeRequests(requests);
+  const sentPin = await sendLarkMessage(chatId, 'text', larkTextContent(pinMessage));
+  request.sensitiveMessages.push(...sensitiveMessageRecord(sentPin));
   request.status = 'delivered';
   request.deliveredAt = new Date().toISOString();
   request.deliveryMethod = 'lark-secure-share';
@@ -1968,6 +2021,11 @@ const autoApprovalTimer = setInterval(() => {
   }
 }, 1000);
 autoApprovalTimer.unref();
+const messageRecallTimer = setInterval(() => {
+  recallReadMessages().catch(() => console.error('Lark read-and-recall scan failed'));
+}, 5000);
+messageRecallTimer.unref();
+server.on('close', () => clearInterval(messageRecallTimer));
 server.on('close', () => clearInterval(autoApprovalTimer));
 server.listen(port, () => console.log(`Passly: http://localhost:${port}`));
 module.exports = server;

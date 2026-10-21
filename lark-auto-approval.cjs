@@ -29,8 +29,9 @@ function createAutoApprovalProcessor({ read, write, deliver, now = Date.now, loc
           item.approvedAt = new Date(now()).toISOString();
           await write(current);
           let delivered = false;
+          let deliveryResult;
           try {
-            await deliver(item);
+            deliveryResult = await deliver(item);
             delivered = true;
           } catch {
             // The remote send may have succeeded despite a network error. Require human retry.
@@ -39,7 +40,10 @@ function createAutoApprovalProcessor({ read, write, deliver, now = Date.now, loc
           const saved = latest.find((request) => request.id === item.id);
           if (saved && saved.status === 'auto_approving') {
             saved.status = delivered ? 'delivered' : 'pending';
-            if (delivered) saved.deliveryMethod = 'lark-agent-auto-approval';
+            if (delivered) {
+              saved.deliveryMethod = 'lark-agent-auto-approval';
+              if (deliveryResult?.sensitiveMessages) saved.sensitiveMessages = deliveryResult.sensitiveMessages;
+            }
             else saved.autoApprovalError = 'delivery_failed';
             await write(latest);
           }
