@@ -1,4 +1,4 @@
-const AUTO_APPROVAL_DELAY_MS = 3 * 60 * 1000;
+const AUTO_APPROVAL_DELAY_MS = 30 * 1000;
 
 function scheduleAutoApproval(now = Date.now()) {
   return { autoApproveAt: new Date(now + AUTO_APPROVAL_DELAY_MS).toISOString() };
@@ -25,7 +25,7 @@ function createAutoApprovalProcessor({ read, write, deliver, now = Date.now, loc
           // Persist a claim before any external send. A restart must not blindly resend it.
           item.status = 'auto_approving';
           item.approvedBy = { type: 'agent', name: 'Passly Agent' };
-          item.approvalMethod = 'automatic-after-3-minutes';
+          item.approvalMethod = 'automatic-after-30-seconds';
           item.approvedAt = new Date(now()).toISOString();
           await write(current);
           let delivered = false;

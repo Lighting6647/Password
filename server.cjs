@@ -1043,7 +1043,7 @@ async function attemptAutoDeliver(item) {
   if (!item.requestVaultItemId || !isAllowedLarkChat(item.larkChatId)) throw new Error('invalid_request');
   const target = findRequestedVaultItem(vault, item);
   if (!target?.password) throw new Error('credential_missing');
-  const message = `✅ Passly Agent อนุมัติอัตโนมัติตามกฎรอ 3 นาที\nผู้ขอ: ${item.name}\nบัญชี: ${target.name}\nUsername: ${target.username || '-'}\nPassword: ${target.password}`;
+  const message = `✅ Passly Agent อนุมัติอัตโนมัติตามกฎรอ 30 วินาที\nผู้ขอ: ${item.name}\nบัญชี: ${target.name}\nUsername: ${target.username || '-'}\nPassword: ${target.password}`;
   await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
 }
 
@@ -1069,7 +1069,7 @@ function larkApprovalCard(item) {
           { is_short: true, text: { tag: "lark_md", content: `**ระบบ / บัญชี:**\n${accountLabel}` } },
           { is_short: false, text: { tag: "lark_md", content: `**เหตุผล:**\n${item.reason}` } },
           { is_short: false, text: { tag: "lark_md", content: `**ผู้มีสิทธิ์อนุมัติ:**\n${approverLabel}` } },
-          ...(item.autoApproveAt ? [{ is_short: false, text: { tag: 'plain_text', content: 'หากยังรออนุมัติเมื่อครบ 3 นาที Passly Agent จะอนุมัติและส่งรหัสอัตโนมัติตามกฎที่ตั้งไว้' } }] : [])
+          ...(item.autoApproveAt ? [{ is_short: false, text: { tag: 'plain_text', content: 'หากยังรออนุมัติเมื่อครบ 30 วินาที Passly Agent จะอนุมัติและส่งรหัสอัตโนมัติตามกฎที่ตั้งไว้' } }] : [])
         ]
       },
       {
