@@ -68,6 +68,10 @@ function getLarkConfig() {
     webhookUrl: localConfig.LARK_WEBHOOK_URL || process.env.LARK_WEBHOOK_URL || '',
     allowedChatId: localConfig.LARK_ALLOWED_CHAT_ID || process.env.LARK_ALLOWED_CHAT_ID || '',
     chatName: localConfig.LARK_CHAT_NAME || process.env.LARK_CHAT_NAME || 'บัญชี 1',
+    approverNames: String(localConfig.LARK_APPROVER_NAMES || process.env.LARK_APPROVER_NAMES || '')
+      .split(',').map((value) => value.trim()).filter(Boolean),
+    approverOpenIds: String(localConfig.LARK_APPROVER_OPEN_IDS || process.env.LARK_APPROVER_OPEN_IDS || '')
+      .split(',').map((value) => value.trim()).filter(Boolean),
     menuCatalog: normalizeLineMenuCatalog(localConfig.LARK_MENU_CATALOG || localConfig.LINE_MENU_CATALOG || []),
   };
 }
@@ -766,6 +770,47 @@ function larkMenuGroups() {
   }));
 }
 
+const larkCredentialCategories = [
+  { key: 'social', label: 'Social' },
+  { key: 'email', label: 'Email' },
+  { key: 'wifi', label: 'Wi-Fi' },
+  { key: 'tools', label: 'เครื่องมือ' },
+];
+
+function classifyLarkCredential(system) {
+  const value = String(system || '').trim().toLowerCase();
+  if (/wi[\s-]?fi|ssid|network|router|deco|tp[\s-]?link|switching|nas|dmss|o-kam|เครื่องพิมพ์|เครือข่าย/.test(value)) return 'wifi';
+  if (/facebook|\bfb\b|instagram|tiktok|youtube|\bline\b|\blark\b|messenger|\bmeta\b|twitter|threads|linkedin|social/.test(value)) return 'social';
+  if (/gmail|e[\s-]?mail|outlook|hotmail|google workspace|\bworkspace\b|microsoft 365|office 365|yahoo|icloud|\bmail\b/.test(value)) return 'email';
+  return 'tools';
+}
+
+function larkCategorizedEntries() {
+  const catalog = getLarkConfig().menuCatalog;
+  if (catalog.length) return catalog.map((item) => ({
+    category: classifyLarkCredential(item.system),
+    label: `${item.system} · ${item.account}`,
+    value: { action: 'request', item: item.id },
+  }));
+  return requestSystems.flatMap((system) => {
+    const accounts = requestAccountMenus[system] || [];
+    const category = classifyLarkCredential(system);
+    if (accounts.length) return accounts.map((account) => ({
+      category,
+      label: `${system} · ${account}`,
+      value: { action: 'request', system, account },
+    }));
+    return [{ category, label: system, value: { action: 'request', system } }];
+  });
+}
+
+function larkCategoryGroups() {
+  const entries = larkCategorizedEntries();
+  return larkCredentialCategories
+    .map((category) => ({ ...category, items: entries.filter((item) => item.category === category.key) }))
+    .filter((category) => category.items.length);
+}
+
 function larkMenuCard(title, subtitle, choices, page = 1, context = { screen: 'main' }) {
   const pageSize = 6;
   const pageCount = Math.max(1, Math.ceil(choices.length / pageSize));
@@ -785,15 +830,15 @@ function larkMenuCard(title, subtitle, choices, page = 1, context = { screen: 'm
   const navigation = [];
   if (safePage > 1) navigation.push({
     tag: 'button', type: 'default', text: { tag: 'plain_text', content: '← ก่อนหน้า' },
-    value: { action: context.screen, group: context.group || '', page: safePage - 1 },
+    value: { action: context.screen, group: context.group || '', category: context.category || '', page: safePage - 1 },
   });
-  if (context.screen === 'submenu') navigation.push({
+  if (context.screen === 'submenu' || context.screen === 'category') navigation.push({
     tag: 'button', type: 'default', text: { tag: 'plain_text', content: 'เมนูหลัก' },
     value: { action: 'menu', page: 1 },
   });
   if (safePage < pageCount) navigation.push({
     tag: 'button', type: 'default', text: { tag: 'plain_text', content: 'ถัดไป →' },
-    value: { action: context.screen, group: context.group || '', page: safePage + 1 },
+    value: { action: context.screen, group: context.group || '', category: context.category || '', page: safePage + 1 },
   });
   if (navigation.length) elements.push({ tag: 'action', actions: navigation });
   elements.push({ tag: 'note', elements: [{ tag: 'plain_text', content: `หน้า ${safePage}/${pageCount} · แสดงครบทุกบัญชี` }] });
@@ -805,24 +850,25 @@ function larkMenuCard(title, subtitle, choices, page = 1, context = { screen: 'm
 }
 
 function larkRequestMenu(page = 1) {
-  const groups = larkMenuGroups();
-  const choices = groups.length
-    ? groups.map((group) => ({
-      label: group.items.length === 1
-        ? `${group.system} · ${group.items[0].account}`
-        : group.system,
-      value: group.items.length > 1
-        ? { action: 'submenu', group: group.key, page: 1 }
-        : { action: 'request', item: group.items[0].id },
-    }))
-    : requestSystems.map((system) => ({
-      label: system,
-      value: requestAccountMenus[system]?.length > 1
-        ? { action: 'submenu', group: system, page: 1 }
-        : { action: 'request', system },
-    }));
+  const groups = larkCategoryGroups();
+  const choices = groups.map((group) => ({
+    label: `${group.label} · ${group.items.length} บัญชี`,
+    value: { action: 'category', category: group.key, page: 1 },
+  }));
   const accountCount = getLarkConfig().menuCatalog.length;
   return larkMenuCard('เมนูขอ Password', accountCount ? `เลือกจาก **${accountCount} บัญชี** ใน Vault` : 'เลือกบัญชีที่ต้องการใช้งาน', choices, page, { screen: 'menu' });
+}
+
+function larkCategoryMenu(categoryKey, page = 1) {
+  const category = larkCategoryGroups().find((entry) => entry.key === categoryKey);
+  if (!category) return larkRequestMenu(1);
+  return larkMenuCard(
+    category.label,
+    `เลือกบัญชีในหมวด **${category.label}** · **${category.items.length} บัญชี**`,
+    category.items,
+    page,
+    { screen: 'category', category: category.key },
+  );
 }
 
 function larkAccountMenu(groupKey, page = 1) {
@@ -1027,16 +1073,19 @@ async function attemptAutoDeliver(item) {
 
 
 function larkApprovalCard(item) {
+  const accountLabel = item.requestAccount ? `${item.system} · ${item.requestAccount}` : item.system;
+  const approverLabel = getLarkConfig().approverNames.join(', ') || 'ผู้อนุมัติที่กำหนดในระบบ';
   return {
     config: { wide_screen_mode: true },
-    header: { template: "blue", title: { tag: "plain_text", content: `คำขอ Password: ${item.system}` } },
+    header: { template: "blue", title: { tag: "plain_text", content: `คำขอ Password: ${accountLabel}` } },
     elements: [
       {
         tag: "div",
         fields: [
           { is_short: true, text: { tag: "lark_md", content: `**ผู้ขอ:**\n<at id="${item.larkUserId}"></at>` } },
-          { is_short: true, text: { tag: "lark_md", content: `**ระบบ / บัญชี:**\n${item.system}` } },
-          { is_short: false, text: { tag: "lark_md", content: `**เหตุผล:**\n${item.reason}` } }
+          { is_short: true, text: { tag: "lark_md", content: `**ระบบ / บัญชี:**\n${accountLabel}` } },
+          { is_short: false, text: { tag: "lark_md", content: `**เหตุผล:**\n${item.reason}` } },
+          { is_short: false, text: { tag: "lark_md", content: `**ผู้มีสิทธิ์อนุมัติ:**\n${approverLabel}` } }
         ]
       },
       {
@@ -1060,10 +1109,40 @@ function larkApprovalCard(item) {
   };
 }
 
-async function verifyAdminRole(openId, vault) {
+function getLarkOperatorOpenId(payload) {
+  return String(
+    payload.event?.operator?.open_id
+      || payload.event?.operator?.operator_id?.open_id
+      || payload.open_id
+      || payload.operator?.open_id
+      || '',
+  ).trim();
+}
+
+async function getAuthorizedLarkApprover(payload) {
+  const openId = getLarkOperatorOpenId(payload);
+  if (!openId) return null;
   const profile = await getLarkUserProfile(openId);
-  const member = vault.members.find(m => m.email === profile.email);
-  return (member && (member.role === 'owner' || member.role === 'admin'));
+  const config = getLarkConfig();
+  const allowedById = config.approverOpenIds.includes(openId);
+  return allowedById ? { openId, profile } : null;
+}
+
+function findRequestedVaultItem(vault, request) {
+  if (request.requestVaultItemId) {
+    return vault.items.find((entry) => entry.id === request.requestVaultItemId && entry.type === 'login' && !entry.trashedAt) || null;
+  }
+  const searchTarget = String(request.requestAccount || request.system || '').trim().toLowerCase();
+  if (!searchTarget) return null;
+  const matches = vault.items.filter((entry) => {
+    if (entry.type !== 'login' || entry.trashedAt) return false;
+    const name = String(entry.name || '').toLowerCase();
+    const username = String(entry.username || '').toLowerCase();
+    return request.requestAccount
+      ? name === String(request.system || '').trim().toLowerCase() && username === searchTarget
+      : name === searchTarget;
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function addServerActivity(vault, action, detail, itemId = null) {
@@ -1091,21 +1170,26 @@ async function handleLarkWebhook(req, res) {
        const current = await readRequests();
        const item = current.find(r => r.id === reqId);
        if (item) {
+          if (item.status !== 'pending') return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'คำขอนี้ดำเนินการแล้ว' } }));
+          const approver = await getAuthorizedLarkApprover(payload);
+          if (!approver) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'คุณไม่มีสิทธิ์อนุมัติหรือปฏิเสธคำขอนี้' } }));
           item.status = 'rejected';
+          item.approvedBy = { name: approver.profile.name, openId: approver.openId };
+          item.approvedAt = new Date().toISOString();
           await writeRequests(current);
           await sendLarkMessage(item.larkChatId, 'text', larkTextContent(`❌ คำขอ ${item.system} ของคุณถูกปฏิเสธ`));
           
           const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL;
           const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD;
           if (botEmail && botPassword) {
-            const envelope = await vaultStore.get();
-            if (envelope) {
+            const vaultState = await vaultStore.get();
+            if (vaultState) {
                try {
+                 const envelope = vaultState.envelope;
                  const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
-                 const adminProfile = await getLarkUserProfile(payload.open_id);
-                 addServerActivity(vault, "ปฏิเสธคำขอ (Lark)", `ปฏิเสธคำขอของ ${item.name} โดย ${adminProfile.name}`, null);
+                 addServerActivity(vault, "ปฏิเสธคำขอ (Lark)", `ปฏิเสธคำขอของ ${item.name} โดย ${approver.profile.name} (${approver.openId})`, null);
                  const newEnvelope = await encryptVault(vault, key, envelope);
-                 await vaultStore.save(newEnvelope);
+                 await vaultStore.put({ ...envelope, ...newEnvelope }, vaultState.revision);
                } catch(e) {}
             }
           }
@@ -1119,26 +1203,23 @@ async function handleLarkWebhook(req, res) {
        const current = await readRequests();
        const item = current.find(r => r.id === reqId);
        if (!item) return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'ไม่พบคำขอนี้ในระบบ' } }));
+       if (item.status !== 'pending') return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'คำขอนี้ดำเนินการแล้ว' } }));
 
        // Verify Bot setup
        const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL;
        const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD;
        if (!botEmail || !botPassword) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่ได้ตั้งค่า AUTO_DELIVER_BOT ไว้ใน Render' } }));
 
-       const envelope = await vaultStore.get();
-       if (!envelope) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่พบ Vault' } }));
+       const vaultState = await vaultStore.get();
+       if (!vaultState) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่พบ Vault' } }));
+       const envelope = vaultState.envelope;
 
        try {
          const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
-         
-         if (!(await verifyAdminRole(payload.open_id, vault))) {
-            return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'คุณไม่มีสิทธิ์ (ต้องเป็น Owner/Admin ใน Passly)' } }));
-         }
+         const approver = await getAuthorizedLarkApprover(payload);
+         if (!approver) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'คุณไม่มีสิทธิ์อนุมัติคำขอนี้' } }));
 
-         let targetItem = vault.items.find(i => 
-           i.name.toLowerCase() === (item.requestAccount || item.system).toLowerCase() || 
-           i.name.toLowerCase().includes((item.requestAccount || item.system).toLowerCase())
-         );
+         const targetItem = findRequestedVaultItem(vault, item);
 
          if (targetItem && targetItem.password) {
             // Deliver
@@ -1146,14 +1227,15 @@ async function handleLarkWebhook(req, res) {
             await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
             
             // Add Activity Log
-            const adminProfile = await getLarkUserProfile(payload.open_id);
-            addServerActivity(vault, "อนุมัติคำขอผ่าน Lark", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${adminProfile.name}`, targetItem.id);
+            addServerActivity(vault, "อนุมัติคำขอผ่าน Lark", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${approver.profile.name} (${approver.openId})`, targetItem.id);
             
             // Encrypt and Save
             const newEnvelope = await encryptVault(vault, key, envelope);
-            await vaultStore.save(newEnvelope);
+            await vaultStore.put({ ...envelope, ...newEnvelope }, vaultState.revision);
 
             item.status = 'delivered';
+            item.approvedBy = { name: approver.profile.name, openId: approver.openId };
+            item.approvedAt = new Date().toISOString();
             await writeRequests(current);
 
             return send(res, 200, JSON.stringify({ toast: { type: 'success', content: 'ส่งรหัสผ่านให้เรียบร้อยแล้ว' } }));
@@ -1166,18 +1248,16 @@ async function handleLarkWebhook(req, res) {
     }
 
     if (action === 'menu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkRequestMenu(value.page))));
+    if (action === 'category') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkCategoryMenu(String(value.category || ''), value.page))));
     if (action === 'submenu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkAccountMenu(String(value.group || ''), value.page))));
     if (action === 'request') {
       const item = await parseLarkCardRequest(payload, value);
-      if (item) {
-        
-      }
       if (!item || !isAllowedLarkChat(item.larkChatId)) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่สามารถรับคำขอจากแชตนี้ได้' } }));
       const current = await readRequests();
       if (!current.some((saved) => saved.id === item.id)) {
         current.unshift(item);
         await writeRequests(current);
-        const adminChatId = process.env.LARK_ALLOWED_CHAT_ID;
+        const adminChatId = process.env.LARK_APPROVAL_CHAT_ID || getLarkConfig().allowedChatId || item.larkChatId;
         await sendLarkMessage(adminChatId, 'interactive', larkApprovalCard(item));
       }
       return send(res, 200, JSON.stringify({ toast: { type: 'success', content: `ระบบส่งคำขอให้ Admin อนุมัติแล้ว` } }));
