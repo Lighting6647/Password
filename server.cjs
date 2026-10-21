@@ -24,6 +24,7 @@ const {
   createVaultStore,
 } = require('./vault-sync-store.cjs');
 const { createRequestStore } = require('./request-store.cjs');
+const { scheduleAutoApproval, createAutoApprovalProcessor } = require('./lark-auto-approval.cjs');
 const { unlockVaultEnvelope, encryptVault } = require('./vault-crypto-node.cjs');
 const { createUserStore } = require('./user-store.cjs');
 
@@ -88,6 +89,8 @@ const maxShareExpiryMs = 30 * 24 * 60 * 60 * 1000;
 const authAttempts = new Map();
 const vaultStore = createVaultStore();
 const requestStore = createRequestStore();
+const larkDecisionLocks = new Set();
+const larkAutoApprovalEnabled = process.env.LARK_AUTO_APPROVAL_ENABLED === 'true';
 const userStore = createUserStore();
 const types = {
   '.html': 'text/html; charset=utf-8',
@@ -1031,45 +1034,25 @@ async function parseLarkCardRequest(payload, value) {
 async function attemptAutoDeliver(item) {
   const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL;
   const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD;
-  if (!botEmail || !botPassword) return false;
+  if (!botEmail || !botPassword) throw new Error('bot_credentials_missing');
 
-  const envelope = await vaultStore.get();
-  if (!envelope) return false;
+  const state = await vaultStore.get();
+  if (!state) throw new Error('vault_missing');
 
-  try {
-    const { vault } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
-    
-    // Find the requested item in the vault
-    let targetItem = null;
-    if (item.requestVaultItemId) {
-      targetItem = vault.items.find(i => i.id === item.requestVaultItemId);
-    } else {
-      // Search by system/account name
-      const searchTarget = item.requestAccount || item.system;
-      targetItem = vault.items.find(i => 
-        i.name.toLowerCase() === searchTarget.toLowerCase() || 
-        i.name.toLowerCase().includes(searchTarget.toLowerCase())
-      );
-    }
-
-    if (targetItem && targetItem.password) {
-      // Send directly to Lark
-      const message = `✅ พบข้อมูลที่คุณขอแล้ว\n\n👤 บัญชี: ${targetItem.name}\n📧 Username: ${targetItem.username || '-'}\n🔑 Password: ${targetItem.password}`;
-      await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
-      
-      // Save request as delivered
-      item.status = 'delivered';
-      
-          const current = await readRequests();
-      current.unshift(item);
-      await writeRequests(current);
-      return true;
-    }
-  } catch (error) {
-    console.error("Auto deliver failed:", error.message);
-  }
-  return false;
+  const { vault } = await unlockVaultEnvelope(state.envelope, botEmail, botPassword);
+  if (!item.requestVaultItemId || !isAllowedLarkChat(item.larkChatId)) throw new Error('invalid_request');
+  const target = findRequestedVaultItem(vault, item);
+  if (!target?.password) throw new Error('credential_missing');
+  const message = `✅ Passly Agent อนุมัติอัตโนมัติตามกฎรอ 3 นาที\nผู้ขอ: ${item.name}\nบัญชี: ${target.name}\nUsername: ${target.username || '-'}\nPassword: ${target.password}`;
+  await sendLarkMessage(item.larkChatId, 'text', larkTextContent(message));
 }
+
+const processAutoApprovals = createAutoApprovalProcessor({
+  read: readRequests,
+  write: writeRequests,
+  deliver: attemptAutoDeliver,
+  locks: larkDecisionLocks,
+});
 
 
 function larkApprovalCard(item) {
@@ -1085,7 +1068,8 @@ function larkApprovalCard(item) {
           { is_short: true, text: { tag: "lark_md", content: `**ผู้ขอ:**\n<at id="${item.larkUserId}"></at>` } },
           { is_short: true, text: { tag: "lark_md", content: `**ระบบ / บัญชี:**\n${accountLabel}` } },
           { is_short: false, text: { tag: "lark_md", content: `**เหตุผล:**\n${item.reason}` } },
-          { is_short: false, text: { tag: "lark_md", content: `**ผู้มีสิทธิ์อนุมัติ:**\n${approverLabel}` } }
+          { is_short: false, text: { tag: "lark_md", content: `**ผู้มีสิทธิ์อนุมัติ:**\n${approverLabel}` } },
+          ...(item.autoApproveAt ? [{ is_short: false, text: { tag: 'plain_text', content: 'หากยังรออนุมัติเมื่อครบ 3 นาที Passly Agent จะอนุมัติและส่งรหัสอัตโนมัติตามกฎที่ตั้งไว้' } }] : [])
         ]
       },
       {
@@ -1164,6 +1148,10 @@ async function handleLarkWebhook(req, res) {
   if (eventType === 'card.action.trigger' || eventType === 'card_action') {
     const value = payload.event?.action?.value || payload.action?.value || {};
     const action = String(value.action || '');
+    const decisionId = ['approve_request', 'reject_request'].includes(action) ? String(value.requestId || '') : '';
+    if (decisionId && larkDecisionLocks.has(decisionId)) return send(res, 200, JSON.stringify({ toast: { type: 'info', content: 'กำลังดำเนินการคำขอนี้' } }));
+    if (decisionId) larkDecisionLocks.add(decisionId);
+    try {
     
     if (action === 'reject_request') {
        const reqId = value.requestId;
@@ -1247,12 +1235,16 @@ async function handleLarkWebhook(req, res) {
        }
     }
 
+    } finally {
+      if (decisionId) larkDecisionLocks.delete(decisionId);
+    }
     if (action === 'menu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkRequestMenu(value.page))));
     if (action === 'category') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkCategoryMenu(String(value.category || ''), value.page))));
     if (action === 'submenu') return send(res, 200, JSON.stringify(larkCardCallbackResponse(larkAccountMenu(String(value.group || ''), value.page))));
     if (action === 'request') {
       const item = await parseLarkCardRequest(payload, value);
       if (!item || !isAllowedLarkChat(item.larkChatId)) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่สามารถรับคำขอจากแชตนี้ได้' } }));
+      if (larkAutoApprovalEnabled && item.requestVaultItemId) Object.assign(item, scheduleAutoApproval());
       const current = await readRequests();
       if (!current.some((saved) => saved.id === item.id)) {
         current.unshift(item);
@@ -1950,6 +1942,8 @@ const server = http.createServer(async (req, res) => {
         larkAppConfigured: Boolean(getLarkConfig().appId && getLarkConfig().appSecret),
         larkVerificationConfigured: Boolean(getLarkConfig().verificationToken),
         larkChatRestricted: Boolean(getLarkConfig().allowedChatId),
+        larkAutoApprovalEnabled,
+        larkBotConfigured: Boolean(process.env.AUTO_DELIVER_BOT_EMAIL && process.env.AUTO_DELIVER_BOT_PASSWORD),
         larkMenuCatalogCount: getLarkConfig().menuCatalog.length,
         telegramConfigured: Boolean(getTelegramConfig().botToken),
         telegramChatRestricted: Boolean(getTelegramConfig().allowedChatId),
@@ -1968,5 +1962,12 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const autoApprovalTimer = setInterval(() => {
+  if (larkAutoApprovalEnabled && process.env.AUTO_DELIVER_BOT_EMAIL && process.env.AUTO_DELIVER_BOT_PASSWORD) {
+    processAutoApprovals().catch(() => console.error('Lark automatic approval scan failed'));
+  }
+}, 1000);
+autoApprovalTimer.unref();
+server.on('close', () => clearInterval(autoApprovalTimer));
 server.listen(port, () => console.log(`Passly: http://localhost:${port}`));
 module.exports = server;

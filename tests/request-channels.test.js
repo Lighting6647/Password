@@ -431,6 +431,7 @@ test("Lark interactive menu requests and secure delivery work end to end", async
       LARK_API_BASE_URL: larkApiUrl,
       LARK_APPROVER_NAMES: "อำพล แซ่แฮ (โอม)",
       LARK_APPROVER_OPEN_IDS: "ou_test_approver",
+      LARK_AUTO_APPROVAL_ENABLED: "true",
       AUTO_DELIVER_BOT_EMAIL: "bot@example.com",
       AUTO_DELIVER_BOT_PASSWORD: "vault-bot-password",
     },
@@ -595,6 +596,8 @@ test("Lark interactive menu requests and secure delivery work end to end", async
   assert.equal(larkRequest.larkChatId, "oc_test_chat");
   assert.equal(larkRequest.requestVaultItemId, accountButton.value.item);
   assert.ok(larkRequest.requestAccount, "the selected Vault account should be stored explicitly");
+  const untilAutoApproval = Date.parse(larkRequest.autoApproveAt) - Date.parse(larkRequest.receivedAt);
+  assert.ok(untilAutoApproval >= 180000 && untilAutoApproval < 185000);
 
   const approvalPush = larkCalls.find((call) => {
     if (call.url !== "/open-apis/im/v1/messages?receive_id_type=chat_id" || call.body?.msg_type !== "interactive") return false;
