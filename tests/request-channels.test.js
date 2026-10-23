@@ -608,12 +608,18 @@ test("Lark interactive menu requests and secure delivery work end to end", async
   assert.ok(untilAutoApproval >= 30000 && untilAutoApproval < 35000);
 
   const approvalPush = larkCalls.find((call) => {
-    if (call.url !== "/open-apis/im/v1/messages?receive_id_type=chat_id" || call.body?.msg_type !== "interactive") return false;
+    if (call.url !== "/open-apis/im/v1/messages?receive_id_type=open_id" || call.body?.msg_type !== "interactive") return false;
     return JSON.parse(call.body.content).elements
       .flatMap((element) => element.actions || [])
       .some((button) => button.value?.action === "approve_request");
   });
   assert.ok(approvalPush, "the request should send an approval card into Lark chat");
+  assert.equal(approvalPush.body.receive_id, 'ou_test_approver');
+  assert.equal(larkCalls.some((call) => {
+    if (call.body?.msg_type !== 'interactive' || call.body?.receive_id !== 'oc_test_chat') return false;
+    return JSON.parse(call.body.content).elements.flatMap((element) => element.actions || [])
+      .some((button) => button.value?.action === 'approve_request' || button.value?.action === 'reject_request');
+  }), false, 'approval controls must never be sent into the requester chat');
   const approvalCard = JSON.parse(approvalPush.body.content);
   assert.match(JSON.stringify(approvalCard), /doctor@example\.com/);
   assert.match(JSON.stringify(approvalCard), /อำพล แซ่แฮ \(โอม\)/);

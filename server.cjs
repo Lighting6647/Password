@@ -974,13 +974,13 @@ function isValidLarkWebhook(value) {
   return /^https:\/\/open\.larksuite\.com\/open-apis\/bot\/v2\/hook\//.test(value || '');
 }
 
-async function sendLarkMessage(chatId, msgType, content, replyToMessageId = '') {
+async function sendLarkMessage(chatId, msgType, content, replyToMessageId = '', receiveIdType = 'chat_id') {
   const config = getLarkConfig();
   if (config.appId && config.appSecret && (chatId || replyToMessageId)) {
     const token = await getLarkTenantToken();
     const endpoint = replyToMessageId
       ? `${larkApiBaseUrl}/open-apis/im/v1/messages/${encodeURIComponent(replyToMessageId)}/reply`
-      : `${larkApiBaseUrl}/open-apis/im/v1/messages?receive_id_type=chat_id`;
+      : `${larkApiBaseUrl}/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`;
     const body = replyToMessageId
       ? { msg_type: msgType, content: JSON.stringify(content) }
       : { receive_id: chatId, msg_type: msgType, content: JSON.stringify(content) };
@@ -991,6 +991,7 @@ async function sendLarkMessage(chatId, msgType, content, replyToMessageId = '') 
     if (!response.ok || result.code) throw new Error(result.msg || 'Lark Message API error');
     return result;
   }
+  if (receiveIdType === 'open_id') throw new Error('ต้องตั้งค่า Lark App เพื่อส่งคำขอให้ผู้อนุมัติส่วนตัว');
   if (!isValidLarkWebhook(config.webhookUrl)) throw new Error('ยังไม่ได้ตั้งค่า Lark App หรือ Incoming Webhook');
   const response = await fetch(config.webhookUrl, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ msg_type: msgType, content }),
@@ -1294,13 +1295,16 @@ async function handleLarkWebhook(req, res) {
     if (action === 'request') {
       const item = await parseLarkCardRequest(payload, value);
       if (!item || !isAllowedLarkChat(item.larkChatId)) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ไม่สามารถรับคำขอจากแชตนี้ได้' } }));
+      const approverIds = [...new Set(getLarkConfig().approverOpenIds)];
+      if (!approverIds.length) return send(res, 200, JSON.stringify({ toast: { type: 'error', content: 'ยังไม่ได้กำหนดผู้อนุมัติส่วนตัว' } }));
       if (larkAutoApprovalEnabled && item.requestVaultItemId) Object.assign(item, scheduleAutoApproval());
       const current = await readRequests();
       if (!current.some((saved) => saved.id === item.id)) {
         current.unshift(item);
         await writeRequests(current);
-        const adminChatId = process.env.LARK_APPROVAL_CHAT_ID || getLarkConfig().allowedChatId || item.larkChatId;
-        await sendLarkMessage(adminChatId, 'interactive', larkApprovalCard(item));
+        for (const approverId of approverIds) {
+          await sendLarkMessage(approverId, 'interactive', larkApprovalCard(item), '', 'open_id');
+        }
       }
       return send(res, 200, JSON.stringify({ toast: { type: 'success', content: `ระบบส่งคำขอให้ Admin อนุมัติแล้ว` } }));
     }
