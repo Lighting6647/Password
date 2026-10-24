@@ -11,7 +11,19 @@ function createReadRecallProcessor({ read, write, hasRead, recall, now = Date.no
           for (const message of request.sensitiveMessages || []) {
             if (!message.messageId || message.recalledAt) continue;
             try {
-              if (!await hasRead(message.messageId, request.larkUserId)) continue;
+              if (!message.readAt) {
+                if (!await hasRead(message.messageId, request.larkUserId)) continue;
+                const current = await read();
+                const tracked = current.find((item) => item.id === request.id)
+                  ?.sensitiveMessages?.find((item) => item.messageId === message.messageId);
+                if (tracked && !tracked.readAt) {
+                  tracked.readAt = new Date(now()).toISOString();
+                  await write(current);
+                }
+                continue;
+              }
+              const readTime = Date.parse(message.readAt);
+              if (!Number.isFinite(readTime) || now() - readTime < 60000) continue;
               await recall(message.messageId);
               const latest = await read();
               const saved = latest.find((item) => item.id === request.id)
