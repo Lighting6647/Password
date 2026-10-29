@@ -1,9 +1,10 @@
 {
   "version": 2,
+  "framework": null,
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.cjs"
+      "destination": "/api/index.js"
     }
   ]
 }

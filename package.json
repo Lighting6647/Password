@@ -2,9 +2,9 @@
   "name": "passly-password-request",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "description": "Password request workflow from LINE to a web admin dashboard",
   "scripts": {
+    "build": "echo 'Static and serverless ready'",
     "start": "node server.cjs",
     "check": "node --check server.cjs && node --check pin-auth.cjs && node --check request-store.cjs && node --check vault-sync-store.cjs && node --check app.js && node --check request-matching.js && node --check vault-crypto.js && node --check vault-storage.js && node --check xlsx-reader.js && node --check share-link.js && node --check share.js",
     "test": "node --test tests/*.test.js"
