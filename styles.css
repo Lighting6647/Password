@@ -353,12 +353,13 @@ input[type="range"] { width: 100%; height: 20px; padding: 0; border: 0; box-shad
 .history-row button { border: 0; background: transparent; color: var(--blue); font-size: 9px; cursor: pointer; }
 
 .health-hero { display: flex; align-items: center; gap: 24px; margin-bottom: 15px; padding: 23px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(125deg, #18251d, #26382b); color: #fff; }
-.health-score { width: 112px; height: 112px; position: relative; flex: 0 0 auto; }
-.health-score svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.health-score circle { fill: none; stroke: #405046; stroke-width: 9; }
+.health-score { width: 120px; height: 120px; position: relative; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.health-score svg { width: 100%; height: 100%; transform: rotate(-90deg); position: absolute; inset: 0; }
+.health-score circle { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 9; }
 .health-score circle:last-child { stroke: var(--lime); stroke-linecap: round; stroke-dasharray: 314; stroke-dashoffset: 0; transition: .4s; }
-.health-score div { position: absolute; inset: 0; display: grid; place-items: center; grid-template-columns: auto auto; align-content: center; }
-.health-score strong { font: 700 30px Manrope; }.health-score span { margin-top: 11px; color: #9dab9f; font-size: 10px; }
+.health-score div { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.health-score strong { font: 700 32px Manrope, sans-serif; letter-spacing: -0.5px; line-height: 1; color: #ffffff !important; }
+.health-score span { color: #a3b8ac !important; font-size: 11px; font-weight: 500; margin-top: 3px; line-height: 1; }
 .health-hero h2 { margin: 6px 0 4px; font-size: 20px; }.health-hero p { margin: 0; color: #a8b5aa; font-size: 10px; }
 .health-label { border-radius: 12px; padding: 4px 8px; background: rgba(213,245,92,.13); color: var(--lime); font-size: 8px; font-weight: 700; }
 .risk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; margin-bottom: 15px; }
@@ -850,10 +851,6 @@ body {
 }
 .health-hero h2 { color: #ffffff !important; font-size: 22px; font-weight: 700; }
 .health-hero p { color: #b7c9be !important; font-size: 12px; }
-.health-score strong { color: #ffffff !important; font-size: 32px; }
-.health-score span { color: #a3b8ac !important; font-size: 12px; }
-.health-score circle { stroke: rgba(255, 255, 255, 0.14); }
-.health-score circle:last-child { stroke: var(--lime); }
 .health-label {
   display: inline-block;
   border-radius: 20px;
