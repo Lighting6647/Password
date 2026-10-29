@@ -2118,4 +2118,6 @@ if (!isServerless) {
   server.on('close', () => clearInterval(autoApprovalTimer));
   server.listen(port, () => console.log(`Passly: http://localhost:${port}`));
 }
-module.exports = server;
+module.exports = requestHandler;
+module.exports.server = server;
+module.exports.requestHandler = requestHandler;

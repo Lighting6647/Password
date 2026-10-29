@@ -1,9 +1,14 @@
 {
   "version": 2,
-  "framework": null,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30,
+      "includeFiles": "*.{cjs,js,html,css,png,svg,ico,jpg}"
+    }
+  },
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "destination": "/api/index.js"
     }
   ]
