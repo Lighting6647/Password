@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "functions": {
+    "api/index.cjs": {
+      "maxDuration": 30,
+      "includeFiles": "*.{cjs,js,html,css,png,svg,ico,jpg}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.cjs"
+    }
+  ]
+}

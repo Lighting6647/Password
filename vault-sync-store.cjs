@@ -147,10 +147,21 @@ class LocalVaultStore {
   async close() {}
 }
 
+const os = require('os');
+
+function resolveDefaultDataDir() {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || __dirname.startsWith('/var/task')) {
+    return path.join(os.tmpdir(), 'passly-data');
+  }
+  return path.join(__dirname, 'data');
+}
+
 function createVaultStore(databaseUrl = process.env.DATABASE_URL) {
   if (!databaseUrl) {
-    const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
-    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    const dataDir = process.env.DATA_DIR || resolveDefaultDataDir();
+    try {
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    } catch {}
     return new LocalVaultStore(path.join(dataDir, 'vault.json'));
   }
   const { Pool } = require('pg');

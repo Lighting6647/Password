@@ -29,9 +29,12 @@ const { createReadRecallProcessor } = require('./lark-message-recall.cjs');
 const { unlockVaultEnvelope, encryptVault } = require('./vault-crypto-node.cjs');
 const { createUserStore } = require('./user-store.cjs');
 
+const os = require('os');
 const root = __dirname;
 const port = process.env.PORT || 3030;
-const dataDir = process.env.DATA_DIR || path.join(root, 'data');
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || __dirname.startsWith('/var/task'));
+const defaultDataDir = isServerless ? path.join(os.tmpdir(), 'passly-data') : path.join(root, 'data');
+const dataDir = process.env.DATA_DIR || defaultDataDir;
 const requestFile = path.join(dataDir, 'requests.json');
 const configFile = path.join(dataDir, 'config.json');
 function getLineConfig() {
@@ -1724,8 +1727,9 @@ async function handleTelegramWebhook(req, res) {
         const botEmail = process.env.AUTO_DELIVER_BOT_EMAIL || 'admin';
         const botPassword = process.env.AUTO_DELIVER_BOT_PASSWORD || '664749';
 
-        const envelope = await vaultStore.get();
-        if (!envelope) {
+        const vaultState = await vaultStore.get();
+        const envelope = vaultState?.envelope || vaultState;
+        if (!envelope || !envelope.salt) {
           await answerTelegramCallback(cq.id, 'ไม่พบ Vault ในระบบ');
           return send(res, 200, JSON.stringify({ ok: true }));
         }
@@ -1734,8 +1738,10 @@ async function handleTelegramWebhook(req, res) {
           const { vault, key } = await unlockVaultEnvelope(envelope, botEmail, botPassword);
           const target = item.requestAccount || item.system;
           const targetItem = vault.items.find((i) =>
-            i.name.toLowerCase() === target.toLowerCase() ||
-            i.name.toLowerCase().includes(target.toLowerCase())
+            !i.trashedAt && (
+              i.name.toLowerCase() === target.toLowerCase() ||
+              i.name.toLowerCase().includes(target.toLowerCase())
+            )
           );
 
           if (targetItem && targetItem.password) {
@@ -1747,9 +1753,12 @@ async function handleTelegramWebhook(req, res) {
             addServerActivity(vault, "อนุมัติคำขอผ่าน Telegram", `ส่งรหัส ${targetItem.name} ให้ ${item.name} โดย ${clickerName}`, targetItem.id);
 
             const newEnvelope = await encryptVault(vault, key, envelope);
-            await vaultStore.save(newEnvelope);
+            const baseRevision = Number.isSafeInteger(vaultState?.revision) ? vaultState.revision : 0;
+            await vaultStore.put({ ...envelope, ...newEnvelope }, baseRevision).catch(() => {});
 
             item.status = 'delivered';
+            item.deliveredAt = new Date().toISOString();
+            item.deliveryMethod = 'telegram-bot';
             await writeRequests(current);
 
             await answerTelegramCallback(cq.id, 'อนุมัติและส่งรหัสเรียบร้อยแล้ว');
@@ -1794,13 +1803,19 @@ async function handleTelegramWebhook(req, res) {
       if (isReq) {
         const systemName = text.replace(/^(ขอ\s*(รหัส|password|pass)|\/req|\/request)\s+/i, '').trim();
         if (systemName) {
+          const nowIso = new Date().toISOString();
           const item = {
             id: crypto.randomUUID(),
             system: systemName,
             name: fromName,
+            email: msg.from?.username ? '@' + msg.from.username : `tg:${msg.from?.id || chatId}`,
             reason: `ขอผ่าน Telegram (${msg.from?.username ? '@' + msg.from.username : chatId})`,
-            createdAt: new Date().toISOString(),
+            date: nowIso.slice(0, 10),
+            receivedAt: nowIso,
+            createdAt: nowIso,
             status: 'pending',
+            urgent: false,
+            source: 'Telegram',
             channel: 'telegram',
             telegramChatId: chatId,
             telegramUserId: msg.from?.id,
@@ -1857,6 +1872,62 @@ async function handleTelegramSetWebhook(req, res) {
   } catch (err) {
     send(res, 400, JSON.stringify({ ok: false, error: err.message }));
   }
+}
+
+async function handleTelegramDelivery(req, res) {
+  const data = JSON.parse(await readBody(req) || '{}');
+  const requests = await readRequests();
+  const request = requests.find((item) => item.id === String(data.requestId || ''));
+  if (!request) {
+    return send(res, 404, JSON.stringify({ ok: false, error: 'ไม่พบคำขอนี้ในระบบ กรุณาให้ผู้ใช้ส่งคำขอใหม่' }));
+  }
+  const config = getTelegramConfig();
+  if (!config.botToken) {
+    return send(res, 400, JSON.stringify({ ok: false, error: 'ยังไม่ได้ตั้งค่า Telegram Bot Token บน Server' }));
+  }
+  const chatId = String(request.telegramChatId || config.allowedChatId || '').trim();
+  if (!chatId) {
+    return send(res, 400, JSON.stringify({ ok: false, error: 'ไม่พบ Telegram Chat ID สำหรับส่งข้อมูล' }));
+  }
+  if (config.allowedChatId && String(config.allowedChatId) !== chatId) {
+    return send(res, 403, JSON.stringify({ ok: false, error: 'แชต Telegram ของคำขอนี้ไม่ได้รับอนุญาต' }));
+  }
+  const pin = String(data.pin || '').trim();
+  const itemName = String(data.itemName || request.system || 'บัญชีที่ร้องขอ').trim().slice(0, 100);
+  const expiresAt = new Date(data.expiresAt);
+  if (!/^[A-Za-z0-9]{4,32}$/.test(pin)) throw new Error('Share PIN ไม่ถูกต้อง');
+  if (!itemName) throw new Error('ไม่พบชื่อรายการที่จะแจก');
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date() || expiresAt > new Date(Date.now() + maxShareExpiryMs)) {
+    throw new Error('วันหมดอายุของลิงก์ต้องอยู่ในอนาคตและไม่เกิน 30 วัน');
+  }
+  const shareUrl = validatedShareUrl(req, data.shareUrl);
+  const expiryText = new Intl.DateTimeFormat('th-TH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Bangkok',
+  }).format(expiresAt);
+  const linkMessage = [
+    '🔐 <b>[Passly] ข้อมูลเข้าใช้งานพร้อมแล้ว</b>',
+    `👤 <b>ผู้รับ:</b> ${request.name}`,
+    `🏢 <b>ระบบ:</b> ${itemName}`,
+    `⏳ <b>หมดอายุ:</b> ${expiryText}`,
+    `🔗 <b>เปิดข้อมูล:</b> ${shareUrl}`,
+  ].join('\n');
+  const pinMessage = [
+    `🔑 <b>[Passly] Share PIN:</b> <code>${pin}</code>`,
+    `สำหรับคำขอ <b>${itemName}</b>`,
+    '<i>ใช้ PIN นี้เปิดลิงก์ Passly ในข้อความก่อนหน้า</i>',
+  ].join('\n');
+  if (linkMessage.length > 4_000 || pinMessage.length > 4_000) {
+    throw new Error('ข้อความ Telegram ยาวเกินขีดจำกัด');
+  }
+  await sendTelegramMessage(chatId, linkMessage);
+  await sendTelegramMessage(chatId, pinMessage);
+  request.status = 'delivered';
+  request.deliveredAt = new Date().toISOString();
+  request.deliveryMethod = 'telegram-secure-share';
+  await writeRequests(requests);
+  send(res, 200, JSON.stringify({ ok: true, deliveredTo: 'Telegram' }));
 }
 
 async function handleTelegramConfigWrite(req, res) {
@@ -1981,6 +2052,10 @@ const server = http.createServer(async (req, res) => {
       if (!requireAdminSession(req, res)) return;
       return await handleLarkDelivery(req, res);
     }
+    if (req.method === 'POST' && req.url === '/api/telegram/deliver') {
+      if (!requireAdminSession(req, res)) return;
+      return await handleTelegramDelivery(req, res);
+    }
     if (req.method === 'GET' && req.url === '/api/health') {
       return send(res, 200, JSON.stringify({
         ok: true,
@@ -2019,17 +2094,19 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const autoApprovalTimer = setInterval(() => {
-  if (larkAutoApprovalEnabled && process.env.AUTO_DELIVER_BOT_EMAIL && process.env.AUTO_DELIVER_BOT_PASSWORD) {
-    processAutoApprovals().catch(() => console.error('Lark automatic approval scan failed'));
-  }
-}, 1000);
-autoApprovalTimer.unref();
-const messageRecallTimer = setInterval(() => {
-  recallReadMessages().catch(() => console.error('Lark read-and-recall scan failed'));
-}, 5000);
-messageRecallTimer.unref();
-server.on('close', () => clearInterval(messageRecallTimer));
-server.on('close', () => clearInterval(autoApprovalTimer));
-server.listen(port, () => console.log(`Passly: http://localhost:${port}`));
+if (!isServerless) {
+  const autoApprovalTimer = setInterval(() => {
+    if (larkAutoApprovalEnabled && process.env.AUTO_DELIVER_BOT_EMAIL && process.env.AUTO_DELIVER_BOT_PASSWORD) {
+      processAutoApprovals().catch(() => console.error('Lark automatic approval scan failed'));
+    }
+  }, 1000);
+  autoApprovalTimer.unref();
+  const messageRecallTimer = setInterval(() => {
+    recallReadMessages().catch(() => console.error('Lark read-and-recall scan failed'));
+  }, 5000);
+  messageRecallTimer.unref();
+  server.on('close', () => clearInterval(messageRecallTimer));
+  server.on('close', () => clearInterval(autoApprovalTimer));
+  server.listen(port, () => console.log(`Passly: http://localhost:${port}`));
+}
 module.exports = server;

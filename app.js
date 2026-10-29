@@ -1285,9 +1285,12 @@ function generateSharePin() {
 function updateDeliverySubmitButton() {
   const form = $("#deliverForm");
   const button = form.querySelector('button[type="submit"]');
-  button.innerHTML = form.elements.channel.value === "lark"
-    ? 'ส่งเข้า Lark <span>→</span>'
-    : 'คัดลอกข้อความ <span>→</span>';
+  const ch = form.elements.channel.value;
+  button.innerHTML = ch === "telegram"
+    ? 'ส่งเข้า Telegram <span>→</span>'
+    : ch === "lark"
+      ? 'ส่งเข้า Lark <span>→</span>'
+      : 'คัดลอกข้อความ <span>→</span>';
 }
 
 function syncCustomExpiryControl(resetValue = false) {
@@ -1344,6 +1347,11 @@ async function openDeliverForRequest(requestId, presetItemId = null) {
     ? `ผู้รับ: ${request.name} · คำขอ: ${request.system} · ระบบแนะนำ: ${matchedItem.name} — ${matchedItem.username || "ไม่มี Username"}`
     : `ผู้รับ: ${request.name} · ระบบ: ${request.system} · กรุณาเลือกบัญชีเพื่อตรวจสอบ`;
   form.elements.pin.value = generateSharePin();
+  if (request.channel === "telegram" || request.source === "Telegram" || request.telegramChatId) {
+    form.elements.channel.value = "telegram";
+  } else if (request.source === "Lark" || request.larkChatId) {
+    form.elements.channel.value = "lark";
+  }
   syncCustomExpiryControl(true);
   updateDeliverySubmitButton();
   openModal("deliverModal");
@@ -1436,6 +1444,17 @@ async function sendLarkDelivery({ requestId, itemName, expiresAt, shareUrl, pin 
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result.ok === false) throw new Error(result.error || "Lark ส่งข้อมูลไม่สำเร็จ");
+  return result;
+}
+
+async function sendTelegramDelivery({ requestId, itemName, expiresAt, shareUrl, pin }) {
+  const response = await fetch("/api/telegram/deliver", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId, itemName, expiresAt, shareUrl, pin }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok === false) throw new Error(result.error || "Telegram ส่งข้อมูลไม่สำเร็จ");
   return result;
 }
 
@@ -1858,7 +1877,11 @@ $("#deliverForm").addEventListener("submit", async (event) => {
   if (item.reprompt && !await verifyMasterPassword("ยืนยันรหัสผ่านก่อนสร้างลิงก์แจกข้อมูล")) return;
   const channel = form.elements.channel.value;
   submitButton.disabled = true;
-  submitButton.textContent = channel === "lark" ? "กำลังส่งเข้า Lark…" : "กำลังคัดลอก…";
+  submitButton.textContent = channel === "telegram"
+    ? "กำลังส่งเข้า Telegram…"
+    : channel === "lark"
+      ? "กำลังส่งเข้า Lark…"
+      : "กำลังคัดลอก…";
   try {
     const expiresAt = resolveShareExpiry(
       form.elements.expiry.value,
@@ -1877,7 +1900,15 @@ $("#deliverForm").addEventListener("submit", async (event) => {
     const prefix = vault.settings.sharePrefix || "[Passly] ข้อมูลเข้าใช้งาน";
     const message = `${prefix}\nผู้รับ: ${request.name}\nระบบ: ${item.name}\nหมดอายุ: ${formatDateTime(expiresAt)}\nลิงก์: ${shareUrl.href}`;
 
-    if (channel === "lark") {
+    if (channel === "telegram") {
+      await sendTelegramDelivery({
+        requestId: request.id,
+        itemName: item.name,
+        expiresAt,
+        shareUrl: shareUrl.href,
+        pin,
+      });
+    } else if (channel === "lark") {
       await sendLarkDelivery({
         requestId: request.id,
         itemName: item.name,
@@ -1892,28 +1923,33 @@ $("#deliverForm").addEventListener("submit", async (event) => {
     const reference = await sha256Reference(shareUrl.href);
     request.status = "delivered";
     request.deliveredAt = nowIso();
-    request.deliveryMethod = channel === "lark" ? "lark-secure-share" : "manual-copy";
+    request.deliveryMethod = channel === "telegram"
+      ? "telegram-secure-share"
+      : channel === "lark"
+        ? "lark-secure-share"
+        : "manual-copy";
     request.deliveryAudit = { itemId: item.id, channel, expiresAt, reference };
     saveRequests();
-    addActivity("แจกข้อมูลจาก Vault", `${item.name} ให้ ${request.name} · ${channel === "lark" ? "Lark" : "คัดลอก"} · ref ${reference}`, item.id);
+    const channelLabel = channel === "telegram" ? "Telegram" : channel === "lark" ? "Lark" : "คัดลอก";
+    addActivity("แจกข้อมูลจาก Vault", `${item.name} ให้ ${request.name} · ${channelLabel} · ref ${reference}`, item.id);
     await persistVault();
     shareResult = { message, pin };
     $("#shareMessage").value = message;
     $("#sharePinResult").textContent = pin;
-    $("#shareResultEyebrow").textContent = channel === "lark" ? "Sent to Lark" : "Share ready";
-    $("#shareResultTitle").textContent = channel === "lark" ? "ส่งข้อมูลเข้า Lark แล้ว" : "คัดลอกข้อความแล้ว";
-    $("#shareResultCopy").textContent = channel === "lark"
+    $("#shareResultEyebrow").textContent = channel === "telegram" ? "Sent to Telegram" : channel === "lark" ? "Sent to Lark" : "Share ready";
+    $("#shareResultTitle").textContent = channel === "telegram" ? "ส่งข้อมูลเข้า Telegram แล้ว" : channel === "lark" ? "ส่งข้อมูลเข้า Lark แล้ว" : "คัดลอกข้อความแล้ว";
+    $("#shareResultCopy").textContent = (channel === "telegram" || channel === "lark")
       ? "ผู้รับจะได้รับลิงก์ Passly และ Share PIN เป็น 2 ข้อความในแชตต้นทาง"
       : "นำข้อความไปส่งให้ผู้รับ และกดคัดลอก Share PIN เพื่อส่งแยกอีกครั้ง";
     closeModal("deliverModal");
     openModal("shareResultModal");
     renderAll();
     toast(
-      channel === "lark" ? "ส่งเข้า Lark แล้ว" : "คัดลอกข้อความแล้ว",
-      channel === "lark" ? "ลิงก์เข้ารหัสและ Share PIN ถูกส่งเป็น 2 ข้อความ" : "อย่าลืมส่ง Share PIN ให้ผู้รับ",
+      channel === "telegram" ? "ส่งเข้า Telegram แล้ว" : channel === "lark" ? "ส่งเข้า Lark แล้ว" : "คัดลอกข้อความแล้ว",
+      (channel === "telegram" || channel === "lark") ? "ลิงก์เข้ารหัสและ Share PIN ถูกส่งเป็น 2 ข้อความ" : "อย่าลืมส่ง Share PIN ให้ผู้รับ",
     );
   } catch (error) {
-    toast(channel === "lark" ? "ส่งเข้า Lark ไม่สำเร็จ" : "คัดลอกไม่สำเร็จ", error.message);
+    toast(channel === "telegram" ? "ส่งเข้า Telegram ไม่สำเร็จ" : channel === "lark" ? "ส่งเข้า Lark ไม่สำเร็จ" : "คัดลอกไม่สำเร็จ", error.message);
   } finally {
     submitButton.disabled = false;
     updateDeliverySubmitButton();

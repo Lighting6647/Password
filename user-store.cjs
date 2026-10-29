@@ -67,8 +67,12 @@ class LocalUserStore {
   }
 }
 
+const os = require('os');
+
 function createUserStore(databaseUrl = process.env.DATABASE_URL) {
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || __dirname.startsWith('/var/task'));
+  const defaultDataDir = isServerless ? path.join(os.tmpdir(), 'passly-data') : path.join(__dirname, 'data');
+  const dataDir = process.env.DATA_DIR || defaultDataDir;
   if (!databaseUrl) return new LocalUserStore(path.join(dataDir, 'users.json'));
   const { Pool } = require('pg');
   return new PostgresUserStore(new Pool({
