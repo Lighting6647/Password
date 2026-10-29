@@ -122,6 +122,11 @@ function send(res, code, body, type = 'application/json; charset=utf-8', extraHe
 }
 
 function readBody(req, limit = 50_000) {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'string') return Promise.resolve(req.body);
+    if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body.toString('utf8'));
+    if (typeof req.body === 'object') return Promise.resolve(JSON.stringify(req.body));
+  }
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
@@ -155,7 +160,7 @@ function parseCookies(req) {
 }
 
 function clientAddress(req) {
-  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
+  return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown')
     .split(',')[0]
     .trim()
     .slice(0, 120);
@@ -1860,7 +1865,7 @@ async function handleTelegramSetWebhook(req, res) {
     return send(res, 400, JSON.stringify({ ok: false, error: 'กรุณากรอก Telegram Bot Token ก่อน' }));
   }
   const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http');
+  const proto = req.headers['x-forwarded-proto'] || (req.socket?.encrypted ? 'https' : 'http');
   const origin = `${proto}://${host}`;
   const webhookUrl = `${origin}/api/telegram/webhook`;
   try {
@@ -1956,107 +1961,108 @@ async function handleTelegramConfigGet(req, res) {
   }));
 }
 
-const server = http.createServer(async (req, res) => {
+const requestHandler = async (req, res) => {
   try {
-    if (req.method === 'POST' && (req.url === '/api/auth/pin' || req.url === '/api/auth/login')) {
+    const pathname = (req.url || '/').split('?')[0];
+    if (req.method === 'POST' && (pathname === '/api/auth/pin' || pathname === '/api/auth/login')) {
       return await handleAdminPinAuth(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/users') {
+    if (req.method === 'GET' && pathname === '/api/users') {
       return await handleGetUsers(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/users') {
+    if (req.method === 'POST' && pathname === '/api/users') {
       return await handlePutUsers(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/auth/status') {
+    if (req.method === 'GET' && pathname === '/api/auth/status') {
       return send(res, 200, JSON.stringify({
         ok: true,
         configured: Boolean(adminPinHash),
         authenticated: isAdminAuthenticated(req),
       }));
     }
-    if (req.method === 'POST' && req.url === '/api/auth/logout') {
+    if (req.method === 'POST' && pathname === '/api/auth/logout') {
       return handleAdminLogout(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/vault/status') {
+    if (req.method === 'GET' && pathname === '/api/vault/status') {
       return await handleVaultStatus(res);
     }
-    if (req.method === 'GET' && req.url === '/api/demo/vault') {
+    if (req.method === 'GET' && pathname === '/api/demo/vault') {
       return await handleDemoVaultRead(res);
     }
-    if (req.method === 'GET' && req.url === '/api/vault') {
+    if (req.method === 'GET' && pathname === '/api/vault') {
       if (!requireAdminSession(req, res)) return;
       return await handleVaultRead(res);
     }
-    if (req.method === 'PUT' && req.url === '/api/vault') {
+    if (req.method === 'PUT' && pathname === '/api/vault') {
       if (!requireAdminSession(req, res)) return;
       return await handleVaultWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/line/webhook') {
+    if (req.method === 'POST' && pathname === '/api/line/webhook') {
       return await handleLineWebhook(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/lark/webhook') {
+    if (req.method === 'POST' && pathname === '/api/lark/webhook') {
       return await handleLarkWebhook(req, res);
     }
     
-    if (req.method === 'POST' && req.url === '/api/telegram/webhook') {
+    if (req.method === 'POST' && pathname === '/api/telegram/webhook') {
       return await handleTelegramWebhook(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/config/telegram') {
+    if (req.method === 'GET' && pathname === '/api/config/telegram') {
       return await handleTelegramConfigGet(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/config/telegram') {
+    if (req.method === 'POST' && pathname === '/api/config/telegram') {
       return await handleTelegramConfigWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/telegram/set-webhook') {
+    if (req.method === 'POST' && pathname === '/api/telegram/set-webhook') {
       return await handleTelegramSetWebhook(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/lark') {
+    if (req.method === 'POST' && pathname === '/api/lark') {
       return await handleLark(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/requests') {
+    if (req.method === 'GET' && pathname === '/api/requests') {
       if (!requireAdminSession(req, res)) return;
       const requests = await enrichLarkRequestProfiles(await readRequests());
       return send(res, 200, JSON.stringify({ requests }));
     }
-    const requestMutationMatch = req.url.match(/^\/api\/requests\/([^/?]+)$/);
+    const requestMutationMatch = pathname.match(/^\/api\/requests\/([^/?]+)$/);
     if (requestMutationMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
       if (!requireAdminSession(req, res)) return;
       return await handleRequestMutation(req, res, decodeURIComponent(requestMutationMatch[1]));
     }
-    if (req.method === 'POST' && req.url === '/api/lark/profiles') {
+    if (req.method === 'POST' && pathname === '/api/lark/profiles') {
       if (!requireAdminSession(req, res)) return;
       return await handleLarkProfileResolution(req, res);
     }
     
-    if (req.method === 'POST' && req.url === '/api/config/line') {
+    if (req.method === 'POST' && pathname === '/api/config/line') {
       if (!requireAdminSession(req, res)) return;
       return await handleLineConfigWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/config/lark') {
+    if (req.method === 'POST' && pathname === '/api/config/lark') {
       if (!requireAdminSession(req, res)) return;
       return await handleLarkConfigWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/line/catalog') {
+    if (req.method === 'POST' && pathname === '/api/line/catalog') {
       if (!requireAdminSession(req, res)) return;
       return await handleLineCatalogWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/lark/catalog') {
+    if (req.method === 'POST' && pathname === '/api/lark/catalog') {
       if (!requireAdminSession(req, res)) return;
       return await handleLarkCatalogWrite(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/line/deliver') {
+    if (req.method === 'POST' && pathname === '/api/line/deliver') {
       if (!requireAdminSession(req, res)) return;
       return await handleLineDelivery(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/lark/deliver') {
+    if (req.method === 'POST' && pathname === '/api/lark/deliver') {
       if (!requireAdminSession(req, res)) return;
       return await handleLarkDelivery(req, res);
     }
-    if (req.method === 'POST' && req.url === '/api/telegram/deliver') {
+    if (req.method === 'POST' && pathname === '/api/telegram/deliver') {
       if (!requireAdminSession(req, res)) return;
       return await handleTelegramDelivery(req, res);
     }
-    if (req.method === 'GET' && req.url === '/api/health') {
+    if (req.method === 'GET' && pathname === '/api/health') {
       return send(res, 200, JSON.stringify({
         ok: true,
         adminPinConfigured: Boolean(adminPinHash),
@@ -2082,7 +2088,7 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
-    const target = req.url === '/' ? '/index.html' : req.url.split('?')[0];
+    const target = pathname === '/' ? '/index.html' : pathname;
     const file = path.resolve(root, '.' + target);
     const relative = path.relative(root, file);
     if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -2092,7 +2098,10 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     send(res, 400, JSON.stringify({ ok: false, error: error.message }));
   }
-});
+};
+
+const server = http.createServer(requestHandler);
+server.requestHandler = requestHandler;
 
 if (!isServerless) {
   const autoApprovalTimer = setInterval(() => {
