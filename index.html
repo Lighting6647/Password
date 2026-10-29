@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261006-menu-responsive" />
+  <link rel="stylesheet" href="styles.css?v=20261029-redesign" />
 </head>
 <body>
   <section class="lock-screen" id="lockScreen">
@@ -354,12 +354,6 @@
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="resetVaultTitle"><button class="modal-close" data-close-modal="resetVaultModal">×</button><p class="eyebrow">Encrypted backup first</p><h2 id="resetVaultTitle">เก็บ Vault เดิมและสร้างใหม่</h2><p>Passly จะดาวน์โหลด Vault ปัจจุบันเป็น Backup เข้ารหัส และจะไม่เขียนทับ Archive รุ่นเก่าที่เก็บไว้ในเบราว์เซอร์</p><form id="resetVaultForm"><label>พิมพ์ RESET เพื่อยืนยัน<input name="confirmation" type="text" required autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="RESET" /></label><p class="form-error" id="resetVaultError" hidden></p><button class="primary-btn full" type="submit">เก็บ Backup และสร้าง Vault ใหม่</button></form></section>
   </div>
 
-  <div class="screen-watermark" id="screenWatermark" aria-hidden="true">
-    <span>FERN CLINIC · CONFIDENTIAL</span>
-    <span>FERN CLINIC · CONFIDENTIAL</span>
-    <span>FERN CLINIC · CONFIDENTIAL</span>
-  </div>
-
   <div class="privacy-shield" id="privacyShield" role="status" aria-live="polite" aria-hidden="true" hidden>
     <div class="privacy-shield-card">
       <span class="privacy-shield-mark">⌁</span>
@@ -371,6 +365,6 @@
   </div>
 
   <div class="toast" id="toast"><span>✓</span><div><strong id="toastTitle">บันทึกแล้ว</strong><small id="toastMessage"></small></div></div>
-  <script type="module" src="app.js?v=20261029-vercel-fix"></script>
+  <script type="module" src="app.js?v=20261029-redesign"></script>
 </body>
 </html>
