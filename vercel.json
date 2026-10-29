@@ -3,7 +3,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "*.{cjs,js,html,css,png,svg,ico,jpg}"
+      "includeFiles": "{*.cjs,*.js,*.html,*.css,*.png,*.svg,*.ico,*.jpg,vendor/**}"
     }
   },
   "rewrites": [

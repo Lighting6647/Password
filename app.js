@@ -29,7 +29,7 @@ import {
 import { readCredentialFile } from "./xlsx-reader.js";
 import { createPortableShareUrl } from "./share-link.js";
 import { requestItemMatchScore } from "./request-matching.js";
-import { gsap } from "./node_modules/gsap/index.js";
+import { gsap } from "./vendor/gsap/index.js";
 
 const REQUEST_STORAGE_KEY = "passly-password-requests-v2";
 const THEME_KEY = "passly-theme";
