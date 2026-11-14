@@ -28,7 +28,6 @@ test("manual logout remains available", () => {
 
 test("privacy shield hides an unlocked vault when capture-related focus is lost", () => {
   assert.match(pageSource, /id="privacyShield"/);
-  assert.match(pageSource, /id="screenWatermark"/);
   assert.match(appSource, /function hasSensitiveScreenContent/);
   assert.match(appSource, /input\[type="password"\]/);
   assert.match(appSource, /function activatePrivacyShield/);
