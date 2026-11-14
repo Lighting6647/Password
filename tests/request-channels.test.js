@@ -50,12 +50,14 @@ function collectPostbackActions(value, result = []) {
   return result;
 }
 
-test("delivery menu offers Lark by default", async () => {
+test("delivery menu defaults to Telegram and still offers Lark", async () => {
   const html = await fs.readFile(path.join(projectRoot, "index.html"), "utf8");
   const app = await fs.readFile(path.join(projectRoot, "app.js"), "utf8");
 
   assert.match(html, /name="channel" id="deliveryChannel"/);
-  assert.match(html, /option value="lark" selected>ส่งเข้า Lark/);
+  assert.match(html, /option value="telegram" selected>ส่งเข้า Telegram/);
+  assert.match(html, /option value="lark">ส่งเข้า Lark/);
+  assert.match(app, /request\.source === "Lark" \|\| request\.larkChatId\) \{\s*form\.elements\.channel\.value = "lark"/);
   assert.match(html, /option value="copy">คัดลอกข้อความ/);
   assert.match(html, /Lark Request & Delivery/);
   assert.match(app, /channel === "lark"/);
