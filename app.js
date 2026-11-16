@@ -830,7 +830,7 @@ async function lockVault(reason = "ออกจากระบบแล้ว", 
       if ($("#demoModeBanner")) $("#demoModeBanner").hidden = true;
       const userCard = $(".user-card");
       if (userCard) {
-        userCard.innerHTML = '<span class="avatar">FN</span><span><strong>Fern Clinic</strong><small>ผู้ดูแลระบบ</small></span>';
+        userCard.innerHTML = '<span class="avatar">P</span><span><strong>Passly</strong><small>ผู้ดูแลระบบ</small></span>';
       }
     }
     await logoutServerSession();
@@ -877,7 +877,7 @@ async function enterDemoMode() {
 
     const userCard = $(".user-card");
     if (userCard) {
-      userCard.innerHTML = '<span class="avatar" style="background:#2563eb;color:#fff;">DM</span><span><strong>Fern Clinic (Demo)</strong><small style="color:#60a5fa;">โหมดทดลองใช้งาน</small></span>';
+      userCard.innerHTML = '<span class="avatar" style="background:#2563eb;color:#fff;">DM</span><span><strong>Passly (Demo)</strong><small style="color:#60a5fa;">โหมดทดลองใช้งาน</small></span>';
     }
 
     deactivatePrivacyShield(true);
@@ -1251,7 +1251,7 @@ async function openItemDetail(itemId) {
     `;
   }
   $("#itemDetailContent").innerHTML = `
-    <div class="detail-heading"><span class="vault-item-icon ${item.type}">${meta.icon}</span><div><p class="eyebrow">${meta.label}</p><h2>${escapeHtml(item.name)}</h2><small>${escapeHtml(item.owner || "Fern Clinic")} · แก้ไข ${formatDateTime(item.updatedAt)}</small></div><button class="icon-action" data-item-favorite="${item.id}">${item.favorite ? "★" : "☆"}</button></div>
+    <div class="detail-heading"><span class="vault-item-icon ${item.type}">${meta.icon}</span><div><p class="eyebrow">${meta.label}</p><h2>${escapeHtml(item.name)}</h2><small>${escapeHtml(item.owner || "Passly")} · แก้ไข ${formatDateTime(item.updatedAt)}</small></div><button class="icon-action" data-item-favorite="${item.id}">${item.favorite ? "★" : "☆"}</button></div>
     ${fields}
     ${item.notes && item.type !== "note" ? `<div class="detail-notes">${escapeHtml(item.notes)}</div>` : ""}
     <div class="detail-actions">${item.type === "login" ? '<button class="primary-btn" data-detail-share>สร้าง Secure Share</button>' : ""}<button class="secondary-btn" data-item-edit="${item.id}">แก้ไข</button><button class="danger-btn" data-item-trash="${item.id}">ย้ายไป Trash</button></div>
